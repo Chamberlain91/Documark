@@ -6,8 +6,8 @@ Documark is a command-line application to generate markdown documentation suitab
 It recursively scans the current or target directory for a pair of dotnet generated `.xml` with its associated `.dll`.
 
 To generate the `.xml` documentation, add the following to your `*.csproj` file.
-```
-    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+```xml
+<GenerateDocumentationFile>true</GenerateDocumentationFile>
 ```
 
 ## Command Line
