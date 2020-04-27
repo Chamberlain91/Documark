@@ -11,7 +11,8 @@ namespace Documark
     {
         private readonly Dictionary<string, int> _links = new Dictionary<string, int>();
 
-        public MarkdownGenerator() : base("md")
+        public MarkdownGenerator(string directory)
+            : base(directory, "md")
         { }
 
         protected override string GenerateAssemblyDocument()
@@ -398,6 +399,7 @@ namespace Documark
         {
             var current = Path.GetDirectoryName(CurrentPath);
             target = Path.GetRelativePath(current, target);
+            target = target.SanitizePath();
 
             return $"[{Escape(text)}][{GetLinkIndex()}]";
 

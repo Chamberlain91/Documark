@@ -45,8 +45,11 @@ namespace Documark
 
         internal readonly string Extension;
 
-        protected Generator(string extension)
+        internal readonly string OutputDirectory;
+
+        protected Generator(string directory, string extension)
         {
+            OutputDirectory = directory ?? throw new ArgumentNullException(nameof(directory));
             Extension = extension ?? throw new ArgumentNullException(nameof(extension));
         }
 
@@ -423,11 +426,11 @@ namespace Documark
 
         protected static TypeType GetTypeType(Type type)
         {
-            if (type.IsClass) { return TypeType.Class; }
+            if (type.IsDelegate()) { return TypeType.Delegate; }
+            else if (type.IsClass) { return TypeType.Class; }
             else if (type.IsEnum) { return TypeType.Enum; }
             else if (type.IsInterface) { return TypeType.Interface; }
             else if (type.IsValueType) { return TypeType.Struct; }
-            else if (type.IsDelegate()) { return TypeType.Delegate; }
             else
             {
                 // todo: throw exception?
@@ -653,7 +656,7 @@ namespace Documark
 
         public string GetRootDirectory(AssemblyName assembly)
         {
-            return $"./Generated/{assembly.Name}";
+            return $"{OutputDirectory}/{assembly.Name}";
         }
 
         public string GetRootDirectory(Assembly assembly)

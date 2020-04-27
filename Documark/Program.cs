@@ -10,6 +10,7 @@ namespace Documark
         private static void Main(string[] args)
         {
             var parser = new ArgParse(); // todo: some sort of arguments syntax "[directory]"
+            parser.AddOption("output=", "o", "Set output directory name. [default: './Api']");
             parser.AddOption("type=", "t", "Set output document type. [default: markdown]");
             // todo: type=[markdown, json] and automatically generate [default: markdown]
             //       then the parser can validate options from the list.
@@ -23,7 +24,7 @@ namespace Documark
                     // Requesting the help screen
                     if (command.HasOption("help"))
                     {
-                        Console.WriteLine("Documark is a C# XML documentation convertor\n");
+                        Console.WriteLine("Documark, A .NET XML Documentation Convertor.\n");
                         Console.WriteLine("\tusage: documark [directory]\n");
                         Console.WriteLine("If the directory argument isn't specified, document will use the current directory.\n");
                         Console.WriteLine(parser.GetHelp());
@@ -56,6 +57,10 @@ namespace Documark
                                 // todo: can replace this check with defaults ^^^
                                 if (command.HasOption("type")) { generatorType = command.GetOption("type")[0]; }
 
+                                var outputDirectory = "./Api";
+                                // todo: can replace this check with defaults ^^^
+                                if (command.HasOption("output")) { outputDirectory = command.GetOption("output")[0]; }
+
                                 // Collect documentation
                                 foreach (var assembly in assemblies)
                                 {
@@ -64,7 +69,7 @@ namespace Documark
                                 }
 
                                 // Construct generator
-                                var generator = CreateGenerator(generatorType);
+                                var generator = CreateGenerator(outputDirectory, generatorType);
 
                                 // Emit documentation
                                 foreach (var assembly in assemblies)
@@ -92,11 +97,11 @@ namespace Documark
             }
         }
 
-        private static Generator CreateGenerator(string generatorType)
+        private static Generator CreateGenerator(string outputDirectory, string generatorType)
         {
             return generatorType switch
             {
-                _ => new MarkdownGenerator(),
+                _ => new MarkdownGenerator(outputDirectory),
             };
         }
 
