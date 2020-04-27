@@ -7,7 +7,7 @@ It recursively scans the current or target directory for a pair of dotnet genera
 
 To generate the `.xml` documentation, add the following to your `*.csproj` file.
 ```
-    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+<GenerateDocumentationFile>true</GenerateDocumentationFile>
 ```
 
 ## Command Line
