@@ -596,6 +596,19 @@ namespace Documark
             return (string.Join(' ', pre) + " " + ret + " " + GetSignature(methodBase, false)).NormalizeSpaces();
         }
 
+        protected string GetDelegateSyntax(Type delegateType)
+        {
+            var invoke = CurrentType.GetMethod("Invoke");
+
+            // Get access modifiers (ie, 'public static class')
+            var access = $"{delegateType.GetAccessModifiers()} {delegateType.GetModifiers()} {$"{GetTypeType(delegateType)}".ToLower()}";
+            access = access.NormalizeSpaces();
+
+            // MethodName<T>(T a, int b) or // MethodName<T>(T, int)
+            var parameters = $"({string.Join(", ", invoke.GetParameters().Select(p => $"{GetSignature(p, false)}")).Trim()})";
+            return $"{access} {GetName(delegateType)}{parameters}";
+        }
+
         protected string GetSignature(MethodBase method, bool compact = false)
         {
             // MethodName<T>(T a, int b) or // MethodName<T>(T, int)

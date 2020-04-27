@@ -142,14 +142,15 @@ namespace Documark
 
         public static string GetModifiers(this Type type)
         {
-            if (type.IsValueType) { return string.Empty; }
-            else
+            if (!type.IsValueType && !type.IsDelegate())
             {
                 if (type.IsStaticClass()) { return "static"; }
                 else if (type.IsAbstract) { return "abstract"; }
                 else if (type.IsSealed) { return "sealed"; }
-                else { return ""; }
             }
-        } 
+
+            // 
+            return string.Empty;
+        }
     }
 }

@@ -20,7 +20,7 @@ namespace Documark
             ResetLinkTable(); // clears target -> index mapping
 
             var text = Header(1, Escape(GetName(CurrentAssembly)));
-            text += Block(GenerateAssemblyHeader(CurrentAssembly));
+            text += Paragraph(Block(GenerateAssemblyHeader(CurrentAssembly)));
             text += Divider();
 
             // Generate TOC
@@ -56,23 +56,40 @@ namespace Documark
         {
             ResetLinkTable(); // clears target -> index mapping
 
-            var text = GenerateTypeSummary();
-            text += Divider();
+            var text = Header(1, Escape(GetName(CurrentType)));
+            var header = GenerateAssemblyHeader(CurrentAssembly) + "\n";
+            header += Bold("Namespace") + ": " + Link(CurrentType.Namespace, GetPath(CurrentType.Assembly)) + "  \n";
+            text += Block(header) + "\n";
 
             if (CurrentType.IsDelegate())
             {
-                // Generate Body for Delegate
-                text += GenerateDelegateBody();
-            }
-            else if (CurrentType.IsEnum)
-            {
-                // Generate Body for Enum
-                text += GenerateEnumBody();
+                text += Paragraph(GetSummary(CurrentType));
+                text += Paragraph(Code(GetDelegateSyntax(CurrentType   )));
+                text += Divider();
+                text += Paragraph(GetRemarks(CurrentType));
+                text += Paragraph(GetExample(CurrentType));
+                text = Paragraph(text);
+
             }
             else
             {
-                // Generate Body for Objects
-                text += GenerateObjectBody();
+                text += Paragraph(GetSummary(CurrentType));
+                text += Paragraph(Code(GetSyntax(CurrentType)));
+                text += Paragraph(GetRemarks(CurrentType));
+                text += Paragraph(GetExample(CurrentType));
+                text = Paragraph(text);
+                text += Divider();
+
+                if (CurrentType.IsEnum)
+                {
+                    // Generate Body for Enum
+                    text += GenerateEnumBody();
+                }
+                else
+                {
+                    // Generate Body for Objects
+                    text += GenerateObjectBody();
+                }
             }
 
             text = Paragraph(text);
@@ -97,7 +114,7 @@ namespace Documark
             var header = GenerateAssemblyHeader(CurrentAssembly);
             header += Bold("Namespace") + ": " + Link(CurrentType.Namespace, GetPath(CurrentType.Assembly)) + "  \n";
             header += Bold("Type") + ": " + Link(GetName(firstMember.DeclaringType), GetPath(firstMember.DeclaringType)) + "  \n";
-            text += Block(header);
+            text += Paragraph(Block(header));
             text += Divider();
 
             // Write members to document
@@ -267,7 +284,7 @@ namespace Documark
             }
 
             // Cleanup newlines and add divider
-            text = text.Trim() + "\n";
+            text = Paragraph(text);
             text += Divider();
 
             if (Constructors.Any())
@@ -311,6 +328,14 @@ namespace Documark
             return text;
         }
 
+        private string GenerateEnumBody()
+        {
+            var text = "";
+            text += Table("Name", "Summary", Fields.Select(m => (GetName(m), GetSummary(m).NormalizeSpaces())));
+            return text.Trim() + "\n";
+        }
+
+
         private string GenerateMemberTable(IEnumerable<MemberInfo> members)
         {
             return Table("Name", "Summary", members.Select(f => (Link(GetName(f), GetPath(f)), Escape(GetSummary(f).NormalizeSpaces()))));
@@ -319,38 +344,6 @@ namespace Documark
         private string GenerateMemberList(IEnumerable<MemberInfo> members)
         {
             return $"{string.Join(", ", members.Select(d => Link(GetName(d), GetPath(d))).Distinct())}\n";
-        }
-
-        private string GenerateTypeSummary()
-        {
-            var text = Header(1, Escape(GetName(CurrentType)));
-            var header = GenerateAssemblyHeader(CurrentAssembly) + "\n";
-            header += Bold("Namespace") + ": " + Link(CurrentType.Namespace, GetPath(CurrentType.Assembly)) + "  \n";
-            text += Block(header) + "\n";
-
-            // Summary Tag
-            text += Paragraph(GetSummary(CurrentType));
-
-            // Emit Type Example
-            text += $"{Code(GetSyntax(CurrentType))}\n";
-
-            // 
-            text += Paragraph(GetRemarks(CurrentType));
-            text += Paragraph(GetExample(CurrentType));
-
-            return text.Trim() + "\n";
-        }
-
-        private string GenerateDelegateBody()
-        {
-            return "DELEGATE";
-        }
-
-        private string GenerateEnumBody()
-        {
-            var text = "";
-            text += Table("Name", "Summary", Fields.Select(m => (GetName(m), GetSummary(m).NormalizeSpaces())));
-            return text.Trim() + "\n";
         }
 
         private void ResetLinkTable()
@@ -374,8 +367,9 @@ namespace Documark
 
         private static string Paragraph(string text)
         {
+            text = text.TrimEnd();
             if (string.IsNullOrEmpty(text)) { return string.Empty; }
-            else { return text.TrimEnd() + "\n\n"; }
+            else { return text + "\n\n"; }
         }
 
         protected override string Escape(string text)
@@ -392,7 +386,7 @@ namespace Documark
 
         protected override string Divider()
         {
-            return $"\n{new string('-', 80)}\n\n";
+            return $"{new string('-', 80)}\n\n";
         }
 
         protected override string Link(string text, string target)
