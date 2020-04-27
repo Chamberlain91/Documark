@@ -55,19 +55,19 @@ namespace Documark
             CurrentType = type;
 
             // Get Constructor Methods
-            Constructors = type.GetConstructors(InstanceBinding).ToArray();
+            Constructors = type.GetConstructors(InstanceBinding).Where(m => IsVisible(m)).ToArray();
 
             // Get Instance Members
-            InstanceFields = type.GetFields(InstanceBinding).Where(m => !m.IsSpecialName && (m.IsFamily || m.IsPublic)).ToArray();
-            InstanceProperties = type.GetProperties(InstanceBinding).Where(m => !m.IsSpecialName && IsVisible(m)).ToArray();
-            InstanceMethods = type.GetMethods(InstanceBinding).Where(m => !m.IsSpecialName && (m.IsFamily || m.IsPublic) && !IsIgnoredMethodName(m.Name)).ToArray();
-            InstanceEvents = type.GetEvents(InstanceBinding).Where(m => !m.IsSpecialName).ToArray();
+            InstanceFields = type.GetFields(InstanceBinding).Where(m => IsVisible(m)).ToArray();
+            InstanceProperties = type.GetProperties(InstanceBinding).Where(m => IsVisible(m)).ToArray();
+            InstanceMethods = type.GetMethods(InstanceBinding).Where(m => IsVisible(m)).ToArray();
+            InstanceEvents = type.GetEvents(InstanceBinding).Where(m => IsVisible(m)).ToArray();
 
             // Get Static Members
-            StaticFields = type.GetFields(StaticBinding).Where(m => !m.IsSpecialName && (m.IsFamily || m.IsPublic)).ToArray();
-            StaticProperties = type.GetProperties(StaticBinding).Where(m => !m.IsSpecialName && IsVisible(m)).ToArray();
-            StaticMethods = type.GetMethods(StaticBinding).Where(m => !m.IsSpecialName && (m.IsFamily || m.IsPublic) && !IsIgnoredMethodName(m.Name)).ToArray();
-            StaticEvents = type.GetEvents(StaticBinding).Where(m => !m.IsSpecialName).ToArray();
+            StaticFields = type.GetFields(StaticBinding).Where(m => IsVisible(m)).ToArray();
+            StaticProperties = type.GetProperties(StaticBinding).Where(m => IsVisible(m)).ToArray();
+            StaticMethods = type.GetMethods(StaticBinding).Where(m => IsVisible(m)).ToArray();
+            StaticEvents = type.GetEvents(StaticBinding).Where(m => IsVisible(m)).ToArray();
 
             // Get Concatenated Members
             Fields = InstanceFields.Concat(StaticFields).ToArray();
@@ -84,14 +84,6 @@ namespace Documark
                                                          IEnumerable<MemberInfo> c, IEnumerable<MemberInfo> d)
             {
                 return a.Concat(b).Concat(c).Concat(d);
-            }
-
-            static bool IsIgnoredMethodName(string name)
-            {
-                return name == "Equals"
-                    || name == "ToString"
-                    || name == "GetHashCode"
-                    || name == "Finalize";
             }
         }
 
@@ -365,6 +357,21 @@ namespace Documark
 
         #endregion
 
+        protected string GetName(MemberInfo member)
+        {
+            return member switch
+            {
+                MethodInfo method => GetName(method),
+                ConstructorInfo constructor => GetName(constructor),
+                PropertyInfo property => GetName(property),
+                FieldInfo field => GetName(field),
+                EventInfo @event => GetName(@event),
+
+                // Failsafe name
+                _ => member.Name,
+            };
+        }
+
         #region Type
 
         protected string GetName(Type type)
@@ -430,20 +437,19 @@ namespace Documark
 
         #endregion
 
-        protected string GetName(MemberInfo member)
-        {
-            return member switch
-            {
-                MethodInfo method => GetName(method),
-                ConstructorInfo constructor => GetName(constructor),
-                PropertyInfo property => GetName(property),
-                FieldInfo field => GetName(field),
-                EventInfo @event => GetName(@event),
+        #region Assembly
 
-                // Failsafe name
-                _ => member.Name,
-            };
+        protected string GetName(Assembly assembly)
+        {
+            return GetName(assembly.GetName());
         }
+
+        protected string GetName(AssemblyName assemblyName)
+        {
+            return assemblyName.Name;
+        }
+
+        #endregion
 
         #region Constructor
 
@@ -472,6 +478,11 @@ namespace Documark
 
         #region Field
 
+        private static bool IsVisible(FieldInfo m)
+        {
+            return !m.IsSpecialName && (m.IsFamily || m.IsPublic);
+        }
+
         protected string GetName(FieldInfo p)
         {
             return p.Name;
@@ -496,7 +507,7 @@ namespace Documark
 
         private static bool IsVisible(PropertyInfo prop)
         {
-            if (prop.CanRead) { return IsVisible(prop.GetMethod); }
+            if (prop.CanRead) { return IsVisible(prop.GetMethod, true); }
             return false;
         }
 
@@ -509,13 +520,13 @@ namespace Documark
         {
             var e = "";
 
-            if (p.CanRead && IsVisible(p.GetMethod))
+            if (p.CanRead && IsVisible(p.GetMethod, true))
             {
                 if (p.GetMethod.IsFamily) { e += "protected "; }
                 e += "get; ";
             }
 
-            if (p.CanWrite && IsVisible(p.SetMethod))
+            if (p.CanWrite && IsVisible(p.SetMethod, true))
             {
                 if (p.SetMethod.IsFamily) { e += "protected "; }
                 e += "set;";
@@ -529,6 +540,11 @@ namespace Documark
 
         #region Event
 
+        private static bool IsVisible(EventInfo m)
+        {
+            return !m.IsSpecialName;
+        }
+
         protected string GetName(EventInfo @event)
         {
             return @event.Name;
@@ -538,10 +554,11 @@ namespace Documark
 
         #region Method
 
-        private static bool IsVisible(MethodInfo method)
+        private static bool IsVisible(MethodBase m, bool property = false)
         {
-            return method.IsFamily
-                || method.IsPublic;
+            var visible = (m.IsFamily || m.IsPublic) && !IsIgnoredMethodName(m.Name);
+            if (!property) { visible = visible && !m.IsSpecialName; }
+            return visible;
         }
 
         protected string GetName(MethodInfo method)
@@ -632,44 +649,7 @@ namespace Documark
 
         #endregion
 
-        protected string GetName(Assembly assembly)
-        {
-            return GetName(assembly.GetName());
-        }
-
-        protected string GetName(AssemblyName assemblyName)
-        {
-            return assemblyName.Name;
-        }
-
-        public IEnumerable<string> GetDependencies()
-        {
-            // Emit assembly names where internals are visible
-            var references = CurrentAssembly.GetReferencedAssemblies();
-            if (references.Length > 1)
-            {
-                var list = new List<string>();
-                foreach (var referenceName in references)
-                {
-                    if (referenceName.Name == "netstandard") { continue; }
-                    list.Add(Link(GetName(referenceName), GetPath(referenceName)));
-                }
-
-                return list;
-            }
-            else
-            {
-                return Array.Empty<string>();
-            }
-        }
-
-        public string GetFrameworkString()
-        {
-            var framework = CurrentAssembly.GetCustomAttribute<TargetFrameworkAttribute>();
-            var displayName = framework.FrameworkDisplayName;
-            if (string.IsNullOrWhiteSpace(displayName)) { displayName = framework.FrameworkName; }
-            return displayName;
-        }
+        #region Get Path or Directory
 
         public string GetRootDirectory(AssemblyName assembly)
         {
@@ -725,6 +705,45 @@ namespace Documark
             var path = $"{root}/{type.Namespace}.{type.GetHumanName()}.{GetName(member)}.txt";
             path = Path.ChangeExtension(path, Extension);
             return path.SanitizePath();
+        }
+
+        #endregion
+
+        private static bool IsIgnoredMethodName(string name)
+        {
+            return name == "Equals"
+                || name == "ToString"
+                || name == "GetHashCode"
+                || name == "Finalize";
+        }
+
+        public IEnumerable<string> GetDependencies()
+        {
+            // Emit assembly names where internals are visible
+            var references = CurrentAssembly.GetReferencedAssemblies();
+            if (references.Length > 1)
+            {
+                var list = new List<string>();
+                foreach (var referenceName in references)
+                {
+                    if (referenceName.Name == "netstandard") { continue; }
+                    list.Add(Link(GetName(referenceName), GetPath(referenceName)));
+                }
+
+                return list;
+            }
+            else
+            {
+                return Array.Empty<string>();
+            }
+        }
+
+        public string GetFrameworkString()
+        {
+            var framework = CurrentAssembly.GetCustomAttribute<TargetFrameworkAttribute>();
+            var displayName = framework.FrameworkDisplayName;
+            if (string.IsNullOrWhiteSpace(displayName)) { displayName = framework.FrameworkName; }
+            return displayName;
         }
     }
 }
