@@ -3,8 +3,6 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 16
 VisualStudioVersion = 16.0.30021.99
 MinimumVisualStudioVersion = 15.0.26124.0
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "GenDoc", "GenDoc\GenDoc.csproj", "{597F2E69-1B13-4CD4-A8CD-68DA9C1F5559}"
-EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Documark", "Documark\Documark.csproj", "{9C701AC4-F025-4BC4-9461-88B24BEBEEA0}"
 EndProject
 Global
@@ -17,18 +15,6 @@ Global
 		Release|x86 = Release|x86
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{597F2E69-1B13-4CD4-A8CD-68DA9C1F5559}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{597F2E69-1B13-4CD4-A8CD-68DA9C1F5559}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{597F2E69-1B13-4CD4-A8CD-68DA9C1F5559}.Debug|x64.ActiveCfg = Debug|Any CPU
-		{597F2E69-1B13-4CD4-A8CD-68DA9C1F5559}.Debug|x64.Build.0 = Debug|Any CPU
-		{597F2E69-1B13-4CD4-A8CD-68DA9C1F5559}.Debug|x86.ActiveCfg = Debug|Any CPU
-		{597F2E69-1B13-4CD4-A8CD-68DA9C1F5559}.Debug|x86.Build.0 = Debug|Any CPU
-		{597F2E69-1B13-4CD4-A8CD-68DA9C1F5559}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{597F2E69-1B13-4CD4-A8CD-68DA9C1F5559}.Release|Any CPU.Build.0 = Release|Any CPU
-		{597F2E69-1B13-4CD4-A8CD-68DA9C1F5559}.Release|x64.ActiveCfg = Release|Any CPU
-		{597F2E69-1B13-4CD4-A8CD-68DA9C1F5559}.Release|x64.Build.0 = Release|Any CPU
-		{597F2E69-1B13-4CD4-A8CD-68DA9C1F5559}.Release|x86.ActiveCfg = Release|Any CPU
-		{597F2E69-1B13-4CD4-A8CD-68DA9C1F5559}.Release|x86.Build.0 = Release|Any CPU
 		{9C701AC4-F025-4BC4-9461-88B24BEBEEA0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{9C701AC4-F025-4BC4-9461-88B24BEBEEA0}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{9C701AC4-F025-4BC4-9461-88B24BEBEEA0}.Debug|x64.ActiveCfg = Debug|Any CPU
