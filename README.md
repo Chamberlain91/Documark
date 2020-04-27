@@ -24,7 +24,7 @@ If the directory argument isn't specified, document will use the current directo
         Show this help
 
 --output [-o]
-        Set output directory namee. [default: './Api']
+        Set output directory name. [default: './Api']
 
 --type [-t]
         Set output document type. [default: markdown]
