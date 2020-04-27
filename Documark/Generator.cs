@@ -14,6 +14,8 @@ namespace Documark
         private const BindingFlags InstanceBinding = BindingFlags.Instance | Declared;
         private const BindingFlags StaticBinding = BindingFlags.Static | Declared;
 
+        public IReadOnlyList<Type> Types { get; private set; }
+
         public IReadOnlyList<ConstructorInfo> Constructors { get; private set; }
 
         public IReadOnlyList<FieldInfo> InstanceFields { get; private set; }
@@ -37,7 +39,9 @@ namespace Documark
 
         public Type CurrentType { get; private set; }
 
-        public Assembly CurrentAssembly => CurrentType.Assembly;
+        public Assembly CurrentAssembly { get; private set; }
+
+        public string CurrentPath { get; private set; }
 
         internal readonly string Extension;
 
@@ -97,16 +101,25 @@ namespace Documark
             var root = GetRootDirectory(assembly);
             if (Directory.Exists(root)) { Directory.Delete(root, true); }
 
+            // Set the current assembly
+            Types = Documentation.GetVisibleTypes(assembly).ToArray();
+            CurrentAssembly = assembly;
+
+            // Generate and write assembly file to disk
+            CurrentPath = GetPath(assembly);
+            Directory.CreateDirectory(Path.GetDirectoryName(CurrentPath));
+            File.WriteAllText(CurrentPath, GenerateAssemblyDocument());
+
             // We will generate document for each type
-            foreach (var type in Documentation.GetVisibleTypes(assembly))
+            foreach (var type in Types)
             {
                 // Sets the current type and gathers type information
                 SetCurrentType(type);
 
                 // Generate and write file to disk
-                var typePath = GetPath(type);
-                Directory.CreateDirectory(Path.GetDirectoryName(typePath));
-                File.WriteAllText(typePath, GenerateTypeDocument());
+                CurrentPath = GetPath(type);
+                Directory.CreateDirectory(Path.GetDirectoryName(CurrentPath));
+                File.WriteAllText(CurrentPath, GenerateTypeDocument());
 
                 // Only bother with writing member files with class/structs
                 if (!type.IsEnum && !type.IsDelegate())
@@ -116,17 +129,19 @@ namespace Documark
                         var member = memberGroup.First();
 
                         // Generate and write file to disk
-                        var memberPath = GetPath(member);
-                        Directory.CreateDirectory(Path.GetDirectoryName(memberPath));
-                        File.WriteAllText(memberPath, GenerateMembersDocument(memberGroup));
+                        CurrentPath = GetPath(member);
+                        Directory.CreateDirectory(Path.GetDirectoryName(CurrentPath));
+                        File.WriteAllText(CurrentPath, GenerateMembersDocument(memberGroup));
                     }
                 }
             }
         }
 
-        protected abstract string GenerateMembersDocument(IEnumerable<MemberInfo> members);
+        protected abstract string GenerateAssemblyDocument();
 
         protected abstract string GenerateTypeDocument();
+
+        protected abstract string GenerateMembersDocument(IEnumerable<MemberInfo> members);
 
         #region Render XML Elements
 
@@ -136,14 +151,22 @@ namespace Documark
 
             if (Documentation.TryGetType(key, out var type))
             {
-                // 
-                return InlineCode(GetName(type));
+                var name = GetName(type);
+                if (Documentation.IsLoaded(type)) { return Link(name, GetPath(type)); }
+                else { return InlineCode(name); }
             }
             else
             if (Documentation.TryGetMemberInfo(key, out var member))
             {
-                // 
-                return InlineCode(GetName(member));
+                //
+                var name = GetName(member);
+                if (member.DeclaringType != CurrentType)
+                {
+                    name = $"{GetName(member.DeclaringType)}.{name}";
+                }
+
+                if (Documentation.IsLoaded(member.DeclaringType)) { return Link(name, GetPath(member)); }
+                else { return InlineCode(name); }
             }
             else
             {
@@ -152,7 +175,7 @@ namespace Documark
             }
         }
 
-        private object RenderParamRef(XElement e)
+        protected virtual string RenderParamRef(XElement e)
         {
             return InlineCode(e.Attribute("name").Value);
         }
@@ -173,7 +196,7 @@ namespace Documark
 
             if (element != null)
             {
-                foreach (var node in element.DescendantNodes())
+                foreach (var node in element.Nodes())
                 {
                     if (node is XElement e)
                     {
@@ -352,7 +375,7 @@ namespace Documark
         protected string GetSyntax(Type type)
         {
             // Get access modifiers (ie, 'public static class')
-            var access = $"{type.GetAccessModifiers()} {type.GetModifiers()} {type.GetTypeType()}";
+            var access = $"{type.GetAccessModifiers()} {type.GetModifiers()} {$"{GetTypeType(type)}".ToLower()}";
             access = access.NormalizeSpaces();
 
             // 
@@ -360,25 +383,49 @@ namespace Documark
 
             // Combine access, name and inheritence list
             var text = $"{access.Trim()} {type.GetHumanName()}";
-            if (inherits.Count > 0) { text += $" : {string.Join(", ", inherits)}"; }
+            if (inherits.Count > 0) { text += $" : {string.Join(", ", inherits.Select(t => t.GetHumanName()))}"; }
             return text.NormalizeSpaces().Trim();
         }
 
-        private static IReadOnlyList<string> GetInherits(Type type)
+        protected static IReadOnlyList<Type> GetInherits(Type type)
         {
-            var inherits = new List<string>();
+            var inherits = new List<Type>();
             if (!type.IsValueType && type.BaseType != typeof(object) && type.BaseType != null)
             {
-                inherits.Add(type.BaseType.GetHumanName());
+                inherits.Add(type.BaseType);
             }
 
             // Append interfaces
             foreach (var interfaceType in type.GetInterfaces())
             {
-                inherits.Add(interfaceType.GetHumanName());
+                inherits.Add(interfaceType);
             }
 
             return inherits;
+        }
+
+        protected enum TypeType
+        {
+            Unknown,
+            Class,
+            Interface,
+            Struct,
+            Delegate,
+            Enum
+        }
+
+        protected static TypeType GetTypeType(Type type)
+        {
+            if (type.IsClass) { return TypeType.Class; }
+            else if (type.IsEnum) { return TypeType.Enum; }
+            else if (type.IsInterface) { return TypeType.Interface; }
+            else if (type.IsValueType) { return TypeType.Struct; }
+            else if (type.IsDelegate()) { return TypeType.Delegate; }
+            else
+            {
+                // todo: throw exception?
+                return TypeType.Unknown;
+            }
         }
 
         #endregion
@@ -430,6 +477,19 @@ namespace Documark
             return p.Name;
         }
 
+        protected string GetSyntax(FieldInfo field)
+        {
+            var list = new List<string>();
+            if (field.IsPublic) { list.Add("public"); }
+            if (field.IsFamily) { list.Add("protected"); }
+            if (field.IsStatic) { list.Add("static"); }
+
+            var access = string.Join(' ', list);
+
+            var text = $"{access.Trim()} {GetName(field.FieldType)} {GetName(field)}";
+            return text.NormalizeSpaces().Trim();
+        }
+
         #endregion
 
         #region Property
@@ -478,7 +538,7 @@ namespace Documark
 
         #region Method
 
-        static bool IsVisible(MethodInfo method)
+        private static bool IsVisible(MethodInfo method)
         {
             return method.IsFamily
                 || method.IsPublic;
@@ -574,10 +634,15 @@ namespace Documark
 
         protected string GetName(Assembly assembly)
         {
-            return assembly.GetName().Name;
+            return GetName(assembly.GetName());
         }
 
-        public string GetDependencies()
+        protected string GetName(AssemblyName assemblyName)
+        {
+            return assemblyName.Name;
+        }
+
+        public IEnumerable<string> GetDependencies()
         {
             // Emit assembly names where internals are visible
             var references = CurrentAssembly.GetReferencedAssemblies();
@@ -587,17 +652,14 @@ namespace Documark
                 foreach (var referenceName in references)
                 {
                     if (referenceName.Name == "netstandard") { continue; }
-
-                    var path = GetRootDirectory(referenceName);
-                    var link = Link(referenceName.Name, path);
-                    list.Add(link);
+                    list.Add(Link(GetName(referenceName), GetPath(referenceName)));
                 }
 
-                return string.Join(", ", list);
+                return list;
             }
             else
             {
-                return "None";
+                return Array.Empty<string>();
             }
         }
 
@@ -622,6 +684,26 @@ namespace Documark
         public string GetRootDirectory(Type type)
         {
             return GetRootDirectory(type.Assembly);
+        }
+
+        public string GetPath(AssemblyName assemblyName)
+        {
+            var root = Path.GetDirectoryName(GetRootDirectory(assemblyName));
+
+            // Get the file name for storing the type document
+            var path = $"{root}/{GetName(assemblyName)}.txt";
+            path = Path.ChangeExtension(path, Extension);
+            return path.SanitizePath();
+        }
+
+        public string GetPath(Assembly assembly)
+        {
+            var root = Path.GetDirectoryName(GetRootDirectory(assembly));
+
+            // Get the file name for storing the type document
+            var path = $"{root}/{GetName(assembly)}.txt";
+            path = Path.ChangeExtension(path, Extension);
+            return path.SanitizePath();
         }
 
         public string GetPath(Type type)

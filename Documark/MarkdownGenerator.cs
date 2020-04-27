@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Xml.Linq;
 
 namespace Documark
 {
@@ -13,30 +14,67 @@ namespace Documark
         public MarkdownGenerator() : base("md")
         { }
 
+        protected override string GenerateAssemblyDocument()
+        {
+            ResetLinkTable(); // clears target -> index mapping
+
+            var text = Header(1, Escape(GetName(CurrentAssembly)));
+            text += Block(GenerateAssemblyHeader(CurrentAssembly));
+            text += Divider();
+
+            // Generate TOC
+            foreach (var namespaceGroup in Types.GroupBy(t => t.Namespace).OrderBy(g => g.Key))
+            {
+                text += Header(2, $"{namespaceGroup.Key}");
+
+                foreach (var typeGroup in namespaceGroup.GroupBy(t => GetTypeType(t)).OrderBy(g => g.Key))
+                {
+                    text += Header(3, $"{typeGroup.Key}");
+                    foreach (var type in typeGroup.OrderBy(t => GetTypeSortKey(t)))
+                    {
+                        text += $"{Link(GetName(type), GetPath(type))}  \n";
+                    }
+
+                    text = Paragraph(text);
+                }
+            }
+
+            text += GenerateLinks();
+            return text;
+
+            string GetTypeSortKey(Type type)
+            {
+                // Has base type, is not object and is not a value type
+                return type.BaseType != null && type.BaseType != typeof(object) && !type.IsValueType
+                       ? GetName(type.BaseType) + "_" + GetName(type)
+                       : GetName(type);
+            }
+        }
+
         protected override string GenerateTypeDocument()
         {
             ResetLinkTable(); // clears target -> index mapping
 
-            // Get Type Header
             var text = GenerateTypeSummary();
             text += Divider();
 
             if (CurrentType.IsDelegate())
             {
-                // Generate delegate types
-                text += GenerateDelegate();
+                // Generate Body for Delegate
+                text += GenerateDelegateBody();
             }
             else if (CurrentType.IsEnum)
             {
-                // Generate delegate types
-                text += GenerateEnum();
+                // Generate Body for Enum
+                text += GenerateEnumBody();
             }
             else
-            { 
-                // Generate member summary
-                text += GenerateMemberSummary();
+            {
+                // Generate Body for Objects
+                text += GenerateObjectBody();
             }
 
+            text = Paragraph(text);
             text += GenerateLinks();
             return text;
         }
@@ -55,9 +93,10 @@ namespace Documark
             var text = Header(1, Escape(GetName(firstMember.DeclaringType) + "." + GetName(firstMember)));
 
             //
-            var header = GenerateAssemblyHeader(firstMember.DeclaringType);
-            header += Bold("Declaring Type") + ": " + Link(GetName(firstMember.DeclaringType), GetPath(firstMember.DeclaringType)) + "  \n";
-            text += Block(header) + "\n";
+            var header = GenerateAssemblyHeader(CurrentAssembly);
+            header += Bold("Namespace") + ": " + Link(CurrentType.Namespace, GetPath(CurrentType.Assembly)) + "  \n";
+            header += Bold("Type") + ": " + Link(GetName(firstMember.DeclaringType), GetPath(firstMember.DeclaringType)) + "  \n";
+            text += Block(header);
             text += Divider();
 
             // Write members to document
@@ -94,8 +133,8 @@ namespace Documark
         {
             var text = "";
             text += $"{Header(4, GetName(field))}";
-            text += Paragraph($"Type: {InlineCode(GetName(field.FieldType))}");
             text += Paragraph(GetSummary(field));
+            text += Paragraph(Code(GetSyntax(field)));
             text += Paragraph(GetRemarks(field));
             text += Paragraph(GetExample(field));
             return text;
@@ -105,8 +144,8 @@ namespace Documark
         {
             var text = "";
             text += $"{Header(3, GetName(property))}";
-            text += Paragraph(Code(GetSyntax(property)));
             text += Paragraph(GetSummary(property));
+            text += Paragraph(Code(GetSyntax(property)));
             text += Paragraph(GetRemarks(property));
             text += Paragraph(GetExample(property));
             return text.Trim();
@@ -116,8 +155,8 @@ namespace Documark
         {
             var text = "";
             text += $"{Header(4, GetName(@event))}\n";
-            text += Paragraph($"Type: {InlineCode(GetName(@event.EventHandlerType))}");
             text += Paragraph(GetSummary(@event));
+            text += Paragraph($"Type: {InlineCode(GetName(@event.EventHandlerType))}");
             text += Paragraph(GetRemarks(@event));
             text += Paragraph(GetExample(@event));
             return text;
@@ -126,7 +165,7 @@ namespace Documark
         private string GenerateMethod(MethodBase method)
         {
             var text = "";
-            text += $"{Header(3, GetSignature(method, true))}";
+            text += Header(3, GetSignature(method, true));
             text += Paragraph(GetSummary(method));
             text += Paragraph(Code(GetSyntax(method)));
             // todo: method paramters
@@ -135,44 +174,63 @@ namespace Documark
             return text;
         }
 
-        private string GenerateAssemblyHeader(Type type)
+        private string GenerateAssemblyHeader(Assembly assembly)
         {
             var assemblyHeader = "";
-            assemblyHeader += Bold("Assembly") + ": " + $"{GetName(type.Assembly)} ({Italics(GetFrameworkString())})  \n";
-            assemblyHeader += Bold("Dependancies") + ": " + GetDependencies() + "  \n";
+
+            assemblyHeader += Bold("Framework") + ": " + GetFrameworkString() + "  \n";
+            assemblyHeader += Bold("Assembly") + ": " + $"{Link(GetName(assembly), GetPath(assembly))}  \n";
+
+            var dependencies = GetDependencies();
+            if (dependencies.Any())
+            {
+                assemblyHeader += Bold("Dependencies") + ": " + string.Join(", ", dependencies) + "  \n";
+            }
+
             return assemblyHeader;
         }
 
-        private string GenerateMemberSummary()
+        private string GenerateObjectBody()
         {
             var text = "";
+
+            var inherits = GetInherits(CurrentType);
+            if (inherits.Any())
+            {
+                text += Bold("Inherits") + ": ";
+                text += Paragraph(string.Join(", ", inherits.Select(t =>
+                {
+                    if (Documentation.IsLoaded(t)) { return Link(GetName(t), GetPath(t)); }
+                    else { return Escape(GetName(t)); }
+                })));
+            }
 
             // Emit Instance Member Summary
 
             if (InstanceFields.Count > 0)
             {
-                text += Header(4, "Fields");
+                text += Bold("Fields") + ": ";
                 text += GenerateMemberList(InstanceFields);
                 text += "\n";
             }
 
             if (InstanceProperties.Count > 0)
             {
-                text += Header(4, "Properties");
+                text += Bold("Properties") + ": ";
                 text += GenerateMemberList(InstanceProperties);
                 text += "\n";
             }
 
             if (InstanceMethods.Count > 0)
             {
-                text += Header(4, "Methods");
+                text += Bold("Methods") + ": ";
                 text += GenerateMemberList(InstanceMethods);
                 text += "\n";
             }
 
             if (InstanceEvents.Count > 0)
             {
-                text += Header(4, "Events");
+                text += Bold("Events") + ": ";
                 text += GenerateMemberList(InstanceEvents);
                 text += "\n";
             }
@@ -181,28 +239,28 @@ namespace Documark
 
             if (StaticFields.Count > 0)
             {
-                text += Header(4, "Static Fields");
+                text += Bold("Static Fields") + ": ";
                 text += GenerateMemberList(StaticFields);
                 text += "\n";
             }
 
             if (StaticProperties.Count > 0)
             {
-                text += Header(4, "Static Properties");
+                text += Bold("Static Properties") + ": ";
                 text += GenerateMemberList(StaticProperties);
                 text += "\n";
             }
 
             if (StaticMethods.Count > 0)
             {
-                text += Header(4, "Static Methods");
+                text += Bold("Static Methods") + ": ";
                 text += GenerateMemberList(StaticMethods);
                 text += "\n";
             }
 
             if (StaticEvents.Count > 0)
             {
-                text += Header(4, "Static Events");
+                text += Bold("Static Events") + ": ";
                 text += GenerateMemberList(StaticEvents);
                 text += "\n";
             }
@@ -211,10 +269,13 @@ namespace Documark
             text = text.Trim() + "\n";
             text += Divider();
 
-            text += Header(2, "Constructors");
-            foreach (var constructor in Constructors)
+            if (Constructors.Any())
             {
-                text += Paragraph(GenerateMethod(constructor));
+                text += Header(2, "Constructors");
+                foreach (var constructor in Constructors)
+                {
+                    text += Paragraph(GenerateMethod(constructor));
+                }
             }
 
             if (Fields.Any())
@@ -251,51 +312,40 @@ namespace Documark
 
         private string GenerateMemberTable(IEnumerable<MemberInfo> members)
         {
-            return Table("Name", "Summary", members.Select(f => (Link(Escape(GetName(f)), GetPath(f)), Escape(GetSummary(f).NormalizeSpaces()))));
+            return Table("Name", "Summary", members.Select(f => (Link(GetName(f), GetPath(f)), Escape(GetSummary(f).NormalizeSpaces()))));
         }
 
         private string GenerateMemberList(IEnumerable<MemberInfo> members)
         {
-            return $"{string.Join(", ", members.Select(d => Link(Escape(GetName(d)), GetPath(d))).Distinct())}\n";
+            return $"{string.Join(", ", members.Select(d => Link(GetName(d), GetPath(d))).Distinct())}\n";
         }
 
         private string GenerateTypeSummary()
         {
             var text = Header(1, Escape(GetName(CurrentType)));
+            var header = GenerateAssemblyHeader(CurrentAssembly) + "\n";
+            header += Bold("Namespace") + ": " + Link(CurrentType.Namespace, GetPath(CurrentType.Assembly)) + "  \n";
+            text += Block(header) + "\n";
 
-            text += Block(GenerateAssemblyHeader(CurrentType)) + "\n";
-
-            // Emit Type Summary
-            var documentation = Documentation.GetDocumentation(CurrentType);
-            if (documentation != null)
-            {
-                // Summary Tag
-                var summary = RenderElement(documentation?.Element("summary"));
-                if (!string.IsNullOrWhiteSpace(summary))
-                {
-                    text += $"{summary}\n\n";
-                }
-
-                // Remarks Tag
-                var remarks = RenderElement(documentation?.Element("remarks"));
-                if (!string.IsNullOrWhiteSpace(remarks))
-                {
-                    text += $"{remarks}\n\n";
-                }
-            }
+            // Summary Tag
+            text += Paragraph(GetSummary(CurrentType));
 
             // Emit Type Example
             text += $"{Code(GetSyntax(CurrentType))}\n";
 
+            // 
+            text += Paragraph(GetRemarks(CurrentType));
+            text += Paragraph(GetExample(CurrentType));
+
             return text.Trim() + "\n";
         }
 
-        private string GenerateDelegate()
+        private string GenerateDelegateBody()
         {
             return "DELEGATE";
         }
 
-        private string GenerateEnum()
+        private string GenerateEnumBody()
         {
             var text = "";
             text += Table("Name", "Summary", Fields.Select(m => (GetName(m), GetSummary(m).NormalizeSpaces())));
@@ -309,7 +359,7 @@ namespace Documark
 
         private string GenerateLinks()
         {
-            var text = "\n";
+            var text = "";
 
             foreach (var (target, index) in _links)
             {
@@ -323,7 +373,8 @@ namespace Documark
 
         private static string Paragraph(string text)
         {
-            return text.Trim() + "\n\n";
+            if (string.IsNullOrEmpty(text)) { return string.Empty; }
+            else { return text.TrimEnd() + "\n\n"; }
         }
 
         protected override string Escape(string text)
@@ -340,15 +391,15 @@ namespace Documark
 
         protected override string Divider()
         {
-            return $"\n{new string('-', 60)}\n\n";
+            return $"\n{new string('-', 80)}\n\n";
         }
 
         protected override string Link(string text, string target)
         {
-            var current = Path.GetDirectoryName(GetPath(CurrentType));
+            var current = Path.GetDirectoryName(CurrentPath);
             target = Path.GetRelativePath(current, target);
 
-            return $"[{text}][{GetLinkIndex()}]";
+            return $"[{Escape(text)}][{GetLinkIndex()}]";
 
             int GetLinkIndex()
             {
@@ -412,8 +463,7 @@ namespace Documark
                     markdown += $"| {Str(left, lSize)} | {Str(right, rSize)} |\n";
                 }
 
-                markdown += "\n";
-                return markdown;
+                return Paragraph(markdown);
             }
             else
             {
@@ -436,14 +486,19 @@ namespace Documark
             if (size <= 0) { throw new ArgumentException("Header type must be 1-6."); }
 
             var h = new string('#', size);
-            return $"{h} {text.Trim()}\n\n";
+            return Paragraph($"{h} {text.Trim()}");
         }
 
         protected override string Code(string text, string type = "cs")
         {
-            return $"```{type}\n{text.Trim()}\n```\n";
+            return Paragraph($"```{type}\n{text.Trim()}\n```");
         }
 
         #endregion
+
+        protected override string RenderPara(XElement element)
+        {
+            return $"{RenderElement(element)}  \n";
+        }
     }
 }

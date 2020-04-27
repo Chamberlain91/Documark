@@ -150,20 +150,6 @@ namespace Documark
                 else if (type.IsSealed) { return "sealed"; }
                 else { return ""; }
             }
-        }
-
-        public static string GetTypeType(this Type type)
-        {
-            if (type.IsClass) { return "class"; }
-            else if (type.IsEnum) { return "enum"; }
-            else if (type.IsInterface) { return "interface"; }
-            else if (type.IsValueType) { return "struct"; }
-            else if (type.IsDelegate()) { return "delegate"; }
-            else
-            {
-                // todo: throw exception?
-                return "unknown";
-            }
-        }
+        } 
     }
 }

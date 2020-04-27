@@ -12,6 +12,7 @@ namespace Documark
     {
         // key to xml documentation
         private static readonly Dictionary<string, XElement> _documentation = new Dictionary<string, XElement>();
+        private static readonly HashSet<Assembly> _xmlAssemblies = new HashSet<Assembly>();
         private static readonly HashSet<Assembly> _assemblies = new HashSet<Assembly>();
 
         // key to type/member
@@ -26,6 +27,16 @@ namespace Documark
                 // LoadDocumentation(assembly);
                 PopulateTypes(GetVisibleTypes(assembly));
             }
+        }
+
+        public static bool IsLoaded(Type type)
+        {
+            return IsLoaded(type.Assembly);
+        }
+
+        public static bool IsLoaded(Assembly assembly)
+        {
+            return _xmlAssemblies.Contains(assembly);
         }
 
         #region Get Documentation
@@ -334,6 +345,9 @@ namespace Documark
                     var name = member.Attribute("name").Value;
                     _documentation[name] = member;
                 }
+
+                // Mark assembly as loaded with XML docs
+                _xmlAssemblies.Add(assembly);
             }
 
             // Mark assembly as visited
