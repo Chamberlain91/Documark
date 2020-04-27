@@ -5,62 +5,25 @@ namespace Documark
 {
     public static class TypeExtensions
     {
+        /// <summary>
+        /// Is this type static? (ie, abstract and sealed)
+        /// </summary>
         public static bool IsStaticClass(this Type type)
         {
             return type.IsAbstract && type.IsSealed;
         }
 
+        /// <summary>
+        /// Does this type representa delegate?
+        /// </summary>
         public static bool IsDelegate(this Type type)
         {
             return type.IsSubclassOf(typeof(Delegate));
         }
 
-        public static string GetVariableName(this Type type)
-        {
-            // Pointer or Reference
-            if (type.IsByRef)
-            {
-                return $"{GetHumanName(type.GetElementType())}Ref";
-            }
-            else
-            // Array of Type
-            if (type.IsArray)
-            {
-                return $"{GetHumanName(type.GetElementType())}Array";
-            }
-            else
-            // Generic Type
-            if (type.IsGenericType)
-            {
-                var name = type.Name;
-
-                // Strip generic grave character
-                var index = name.IndexOf("`");
-                if (index >= 0) { name = name.Substring(0, index); }
-
-                return GetName(type, name);
-            }
-            // Simple Type
-            else
-            {
-                return GetName(type, type.Name);
-            }
-
-            static string GetName(Type type, string name)
-            {
-                if (type.IsInterface)
-                {
-                    // Interface naming pattern
-                    if (name[0] == 'I' && char.IsUpper(name[1]))
-                    {
-                        name = name.Substring(1);
-                    }
-                }
-
-                return name.ToSnakeCase();
-            }
-        }
-
+        /// <summary>
+        /// Gets the human name of the type (ie, what you would write in code).
+        /// </summary>
         public static string GetHumanName(this Type type)
         {
             // Primitive Types
@@ -127,30 +90,6 @@ namespace Documark
             {
                 return $"{pre}{type.Name}";
             }
-        }
-
-        public static string GetAccessModifiers(this Type type)
-        {
-            if (type.IsPublic) { return "public"; }
-            else if (type.IsNestedFamily || type.IsNestedFamORAssem) { return "protected"; }
-            else
-            {
-                // todo: throw exception?
-                return "unknown";
-            }
-        }
-
-        public static string GetModifiers(this Type type)
-        {
-            if (!type.IsValueType && !type.IsDelegate())
-            {
-                if (type.IsStaticClass()) { return "static"; }
-                else if (type.IsAbstract) { return "abstract"; }
-                else if (type.IsSealed) { return "sealed"; }
-            }
-
-            // 
-            return string.Empty;
         }
     }
 }

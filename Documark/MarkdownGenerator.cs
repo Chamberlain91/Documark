@@ -2,375 +2,51 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Reflection;
+using System.Text.RegularExpressions;
 using System.Xml.Linq;
 
 namespace Documark
 {
     internal sealed class MarkdownGenerator : Generator
     {
+        // Two or more newlines
+        private static readonly Regex _newlineCollapse = new Regex("\n(\n+)", RegexOptions.Compiled);
+
         private readonly Dictionary<string, int> _links = new Dictionary<string, int>();
 
         public MarkdownGenerator(string directory)
             : base(directory, "md")
         { }
 
-        protected override string GenerateAssemblyDocument()
+        protected override void BeginDocument(ref string text)
         {
-            ResetLinkTable(); // clears target -> index mapping
-
-            var text = Header(1, Escape(GetName(CurrentAssembly)));
-            text += Paragraph(Block(GenerateAssemblyHeader(CurrentAssembly)));
-            text += Divider();
-
-            // Generate TOC
-            foreach (var namespaceGroup in Types.GroupBy(t => t.Namespace).OrderBy(g => g.Key))
-            {
-                text += Header(2, $"{namespaceGroup.Key}");
-
-                foreach (var typeGroup in namespaceGroup.GroupBy(t => GetTypeType(t)).OrderBy(g => g.Key))
-                {
-                    text += Header(3, $"{typeGroup.Key}");
-                    foreach (var type in typeGroup.OrderBy(t => GetTypeSortKey(t)))
-                    {
-                        text += $"{Link(GetName(type), GetPath(type))}  \n";
-                    }
-
-                    text = Paragraph(text);
-                }
-            }
-
-            text += GenerateLinks();
-            return text;
-
-            string GetTypeSortKey(Type type)
-            {
-                // Has base type, is not object and is not a value type
-                return type.BaseType != null && type.BaseType != typeof(object) && !type.IsValueType
-                       ? GetName(type.BaseType) + "_" + GetName(type)
-                       : GetName(type);
-            }
-        }
-
-        protected override string GenerateTypeDocument()
-        {
-            ResetLinkTable(); // clears target -> index mapping
-
-            var text = Header(1, Escape(GetName(CurrentType)));
-            var header = GenerateAssemblyHeader(CurrentAssembly) + "\n";
-            header += Bold("Namespace") + ": " + Link(CurrentType.Namespace, GetPath(CurrentType.Assembly)) + "  \n";
-            text += Block(header) + "\n";
-
-            if (CurrentType.IsDelegate())
-            {
-                text += Paragraph(GetSummary(CurrentType));
-                text += Paragraph(Code(GetDelegateSyntax(CurrentType   )));
-                text += Divider();
-                text += Paragraph(GetRemarks(CurrentType));
-                text += Paragraph(GetExample(CurrentType));
-                text = Paragraph(text);
-
-            }
-            else
-            {
-                text += Paragraph(GetSummary(CurrentType));
-                text += Paragraph(Code(GetSyntax(CurrentType)));
-                text += Paragraph(GetRemarks(CurrentType));
-                text += Paragraph(GetExample(CurrentType));
-                text = Paragraph(text);
-                text += Divider();
-
-                if (CurrentType.IsEnum)
-                {
-                    // Generate Body for Enum
-                    text += GenerateEnumBody();
-                }
-                else
-                {
-                    // Generate Body for Objects
-                    text += GenerateObjectBody();
-                }
-            }
-
-            text = Paragraph(text);
-            text += GenerateLinks();
-            return text;
-        }
-
-        protected override string GenerateMembersDocument(IEnumerable<MemberInfo> members)
-        {
-            ResetLinkTable(); // clears target -> index mapping
-
-            // Validate members are from the same consistent type
-            var firstMember = members.First();
-            if (!members.All(m => m.DeclaringType == firstMember.DeclaringType))
-            {
-                throw new InvalidOperationException("All members must be from the same type.");
-            }
-
-            var text = Header(1, Escape(GetName(firstMember.DeclaringType) + "." + GetName(firstMember)));
-
-            //
-            var header = GenerateAssemblyHeader(CurrentAssembly);
-            header += Bold("Namespace") + ": " + Link(CurrentType.Namespace, GetPath(CurrentType.Assembly)) + "  \n";
-            header += Bold("Type") + ": " + Link(GetName(firstMember.DeclaringType), GetPath(firstMember.DeclaringType)) + "  \n";
-            text += Paragraph(Block(header));
-            text += Divider();
-
-            // Write members to document
-            foreach (var member in members)
-            {
-                switch (member)
-                {
-                    case FieldInfo field:
-                        text += GenerateField(field);
-                        break;
-
-                    case PropertyInfo property:
-                        text += GenerateProperty(property);
-                        break;
-
-                    case EventInfo @event:
-                        text += GenerateEvent(@event);
-                        break;
-
-                    case MethodInfo method:
-                        text += GenerateMethod(method);
-                        break;
-                }
-
-                text = Paragraph(text);
-            }
-
-            // Append links metadata
-            text += GenerateLinks();
-            return text;
-        }
-
-        private string GenerateField(FieldInfo field)
-        {
-            var text = "";
-            text += $"{Header(4, GetName(field))}";
-            text += Paragraph(GetSummary(field));
-            text += Paragraph(Code(GetSyntax(field)));
-            text += Paragraph(GetRemarks(field));
-            text += Paragraph(GetExample(field));
-            return text;
-        }
-
-        private string GenerateProperty(PropertyInfo property)
-        {
-            var text = "";
-            text += $"{Header(3, GetName(property))}";
-            text += Paragraph(GetSummary(property));
-            text += Paragraph(Code(GetSyntax(property)));
-            text += Paragraph(GetRemarks(property));
-            text += Paragraph(GetExample(property));
-            return text.Trim();
-        }
-
-        private string GenerateEvent(EventInfo @event)
-        {
-            var text = "";
-            text += $"{Header(4, GetName(@event))}\n";
-            text += Paragraph(GetSummary(@event));
-            text += Paragraph($"Type: {InlineCode(GetName(@event.EventHandlerType))}");
-            text += Paragraph(GetRemarks(@event));
-            text += Paragraph(GetExample(@event));
-            return text;
-        }
-
-        private string GenerateMethod(MethodBase method)
-        {
-            var text = "";
-            text += Header(3, GetSignature(method, true));
-            text += Paragraph(GetSummary(method));
-            text += Paragraph(Code(GetSyntax(method)));
-            // todo: method paramters
-            text += Paragraph(GetRemarks(method));
-            text += Paragraph(GetExample(method));
-            return text;
-        }
-
-        private string GenerateAssemblyHeader(Assembly assembly)
-        {
-            var assemblyHeader = "";
-
-            assemblyHeader += Bold("Framework") + ": " + GetFrameworkString() + "  \n";
-            assemblyHeader += Bold("Assembly") + ": " + $"{Link(GetName(assembly), GetPath(assembly))}  \n";
-
-            var dependencies = GetDependencies();
-            if (dependencies.Any())
-            {
-                assemblyHeader += Bold("Dependencies") + ": " + string.Join(", ", dependencies) + "  \n";
-            }
-
-            return assemblyHeader;
-        }
-
-        private string GenerateObjectBody()
-        {
-            var text = "";
-
-            var inherits = GetInherits(CurrentType);
-            if (inherits.Any())
-            {
-                text += Bold("Inherits") + ": ";
-                text += Paragraph(string.Join(", ", inherits.Select(t =>
-                {
-                    if (Documentation.IsLoaded(t)) { return Link(GetName(t), GetPath(t)); }
-                    else { return Escape(GetName(t)); }
-                })));
-            }
-
-            // Emit Instance Member Summary
-
-            if (InstanceFields.Count > 0)
-            {
-                text += Bold("Fields") + ": ";
-                text += GenerateMemberList(InstanceFields);
-                text += "\n";
-            }
-
-            if (InstanceProperties.Count > 0)
-            {
-                text += Bold("Properties") + ": ";
-                text += GenerateMemberList(InstanceProperties);
-                text += "\n";
-            }
-
-            if (InstanceMethods.Count > 0)
-            {
-                text += Bold("Methods") + ": ";
-                text += GenerateMemberList(InstanceMethods);
-                text += "\n";
-            }
-
-            if (InstanceEvents.Count > 0)
-            {
-                text += Bold("Events") + ": ";
-                text += GenerateMemberList(InstanceEvents);
-                text += "\n";
-            }
-
-            // Emit Static Member Summary
-
-            if (StaticFields.Count > 0)
-            {
-                text += Bold("Static Fields") + ": ";
-                text += GenerateMemberList(StaticFields);
-                text += "\n";
-            }
-
-            if (StaticProperties.Count > 0)
-            {
-                text += Bold("Static Properties") + ": ";
-                text += GenerateMemberList(StaticProperties);
-                text += "\n";
-            }
-
-            if (StaticMethods.Count > 0)
-            {
-                text += Bold("Static Methods") + ": ";
-                text += GenerateMemberList(StaticMethods);
-                text += "\n";
-            }
-
-            if (StaticEvents.Count > 0)
-            {
-                text += Bold("Static Events") + ": ";
-                text += GenerateMemberList(StaticEvents);
-                text += "\n";
-            }
-
-            // Cleanup newlines and add divider
-            text = Paragraph(text);
-            text += Divider();
-
-            if (Constructors.Any())
-            {
-                text += Header(2, "Constructors");
-                foreach (var constructor in Constructors)
-                {
-                    text += Paragraph(GenerateMethod(constructor));
-                }
-            }
-
-            if (Fields.Any())
-            {
-                text += Header(2, "Fields");
-                text += GenerateMemberTable(Fields);
-                text = text.Trim() + "\n\n";
-            }
-
-            if (Properties.Any())
-            {
-                text += Header(2, "Properties");
-                text += GenerateMemberTable(Properties);
-                text = text.Trim() + "\n\n";
-            }
-
-            if (Events.Any())
-            {
-                text += Header(2, "Events");
-                text += GenerateMemberTable(Events);
-                text = text.Trim() + "\n\n";
-            }
-
-            if (Methods.Any())
-            {
-                text += Header(2, "Methods");
-                text += GenerateMemberTable(Methods);
-                text = text.Trim() + "\n\n";
-            }
-
-            text = text.Trim() + "\n\n";
-            return text;
-        }
-
-        private string GenerateEnumBody()
-        {
-            var text = "";
-            text += Table("Name", "Summary", Fields.Select(m => (GetName(m), GetSummary(m).NormalizeSpaces())));
-            return text.Trim() + "\n";
-        }
-
-
-        private string GenerateMemberTable(IEnumerable<MemberInfo> members)
-        {
-            return Table("Name", "Summary", members.Select(f => (Link(GetName(f), GetPath(f)), Escape(GetSummary(f).NormalizeSpaces()))));
-        }
-
-        private string GenerateMemberList(IEnumerable<MemberInfo> members)
-        {
-            return $"{string.Join(", ", members.Select(d => Link(GetName(d), GetPath(d))).Distinct())}\n";
-        }
-
-        private void ResetLinkTable()
-        {
+            // Clears link table
             _links.Clear();
         }
 
-        private string GenerateLinks()
+        protected override void EndDocument(ref string text)
         {
-            var text = "";
+            // Append link metadata
+            text += GenerateLinks();
 
-            foreach (var (target, index) in _links)
+            // Collapse 2+ newlines into exactly 2 newlines.
+            // This is to prettify the document.
+            text = _newlineCollapse.Replace(text, "\n\n");
+
+            string GenerateLinks()
             {
-                text += $"[{index}]: {target}\n";
-            }
+                var links = "";
 
-            return text;
+                foreach (var (target, index) in _links)
+                {
+                    links += $"[{index}]: {target}\n";
+                }
+
+                return links;
+            }
         }
 
         #region Document Styles
-
-        private static string Paragraph(string text)
-        {
-            text = text.TrimEnd();
-            if (string.IsNullOrEmpty(text)) { return string.Empty; }
-            else { return text + "\n\n"; }
-        }
 
         protected override string Escape(string text)
         {
@@ -382,11 +58,6 @@ namespace Documark
         protected override string Badge(string text)
         {
             return InlineCode(text);
-        }
-
-        protected override string Divider()
-        {
-            return $"{new string('-', 80)}\n\n";
         }
 
         protected override string Link(string text, string target)
@@ -413,25 +84,25 @@ namespace Documark
             return string.Join(null, text.Split('\n').Select(s => $"    {s}"));
         }
 
-        protected override string Block(string text)
+        protected override string QuoteIndent(string text)
         {
             if (string.IsNullOrWhiteSpace(text)) { return string.Empty; }
             return string.Join(null, text.Split('\n', StringSplitOptions.RemoveEmptyEntries).Select(s => $"> {s}\n"));
         }
 
-        protected override string Italics(string text, string type = "cs")
+        protected override string Italics(string text)
         {
             if (string.IsNullOrWhiteSpace(text)) { return string.Empty; }
             return $"_{text}_";
         }
 
-        protected override string Bold(string text, string type = "cs")
+        protected override string Bold(string text)
         {
             if (string.IsNullOrWhiteSpace(text)) { return string.Empty; }
             return $"**{text}**";
         }
 
-        protected override string InlineCode(string text, string type = "cs")
+        protected override string InlineCode(string text)
         {
             if (string.IsNullOrWhiteSpace(text)) { return string.Empty; }
             return $"`{text}`";
@@ -459,7 +130,7 @@ namespace Documark
                     markdown += $"| {Str(left, lSize)} | {Str(right, rSize)} |\n";
                 }
 
-                return Paragraph(markdown);
+                return markdown + "\n";
             }
             else
             {
@@ -477,17 +148,28 @@ namespace Documark
             }
         }
 
-        protected override string Header(int size, string text)
+        protected override string UnorderedList(IEnumerable<string> items)
+        {
+            var text = "";
+            foreach (var item in items)
+            {
+                text += $" - {item}\n";
+            }
+
+            return text + "\n";
+        }
+
+        protected override string Header(HeaderSize size, string text)
         {
             if (size <= 0) { throw new ArgumentException("Header type must be 1-6."); }
 
-            var h = new string('#', size);
-            return Paragraph($"{h} {text.Trim()}");
+            var h = new string('#', (int) size);
+            return $"{h} {text.Trim()}\n\n";
         }
 
         protected override string Code(string text, string type = "cs")
         {
-            return Paragraph($"```{type}\n{text.Trim()}\n```");
+            return $"```{type}\n{text.Trim()}\n```\n\n";
         }
 
         #endregion

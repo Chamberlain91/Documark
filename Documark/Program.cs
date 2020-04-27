@@ -101,7 +101,7 @@ namespace Documark
         {
             return generatorType switch
             {
-                _ => new MarkdownGenerator(outputDirectory),
+                _ => new PlaintextGenerator(outputDirectory),
             };
         }
 
