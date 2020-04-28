@@ -399,7 +399,9 @@ namespace Documark
         {
             var text = "";
             text += Table("Name", "Summary", Fields.Select(m => (GetName(m), GetSummary(m).NormalizeSpaces())));
-            return text.Trim() + "\n";
+
+            text = text.Trim() + "\n\n";
+            return text;
         }
 
         private string GenerateField(FieldInfo field)
@@ -429,6 +431,7 @@ namespace Documark
             var text = "";
             text += Header(HeaderSize.Tiny, GetName(@event));
             text += GetSummary(@event) + "\n\n";
+            text += Code(GetSyntax(@event)) + "\n\n";
             text += $"Type: {InlineCode(GetName(@event.EventHandlerType))}\n\n";
             text += GetRemarks(@event) + "\n\n";
             text += GetExample(@event) + "\n\n";
@@ -859,29 +862,67 @@ namespace Documark
             return false;
         }
 
-        protected string GetName(PropertyInfo p)
+        protected string GetName(PropertyInfo property)
         {
-            return p.Name;
+            if (property.GetIndexParameters().Any()) { return $"Indexer"; }
+            else { return property.Name; }
         }
 
-        protected string GetSyntax(PropertyInfo p)
+        protected string GetSyntax(PropertyInfo property)
         {
-            var e = "";
+            var modifiers = string.Join(' ', GetModifiers(property));
+            var isProtected = !modifiers.Contains("protected");
 
-            if (p.CanRead && IsVisible(p.GetMethod, true))
+            var methods = "";
+            if (property.CanRead && IsVisible(property.GetMethod, true))
             {
-                if (p.GetMethod.IsFamily) { e += "protected "; }
-                e += "get; ";
+                // If getter is protected, but only if the property itself isn't protected
+                if (property.GetMethod.IsFamily && isProtected) { methods += "protected "; }
+                methods += "get; ";
             }
 
-            if (p.CanWrite && IsVisible(p.SetMethod, true))
+            if (property.CanWrite && IsVisible(property.SetMethod, true))
             {
-                if (p.SetMethod.IsFamily) { e += "protected "; }
-                e += "set;";
+                // If setter is protected, but only if the property itself isn't protected
+                if (property.SetMethod.IsFamily && !isProtected) { methods += "protected "; }
+                methods += "set;";
             }
 
-            var ret = GetName(p.GetMethod.ReturnType);
-            return $"{ret} {GetName(p)} {{ {e.Trim()} }}";
+            // Get the return type
+            var returnType = GetName(property.GetMethod.ReturnType);
+
+            // Get the index parameters
+            var parameters = property.GetIndexParameters().Select(p => GetSignature(p, false));
+            if (parameters.Any())
+            {
+                var args = string.Join(", ", parameters);
+                var text = $"{modifiers} {returnType} this[{args}] {{ {methods.Trim()} }}";
+                return text.NormalizeSpaces();
+            }
+            else
+            {
+                var text = $"{modifiers} {returnType} {GetName(property)} {{ {methods.Trim()} }}";
+                return text.NormalizeSpaces();
+            }
+        }
+
+        protected IEnumerable<string> GetModifiers(PropertyInfo property)
+        {
+            var modifiers = new HashSet<string>();
+            var methods = GetMethods();
+
+            // Get property method modifiers
+            if (methods.Any(m => m?.IsPublic ?? false)) { modifiers.Add("public"); }
+            else if (methods.Any(m => m?.IsFamily ?? false)) { modifiers.Add("protected"); }
+            if (methods.Any(m => m?.IsStatic ?? false)) { modifiers.Add("static"); }
+
+            return modifiers;
+
+            IEnumerable<MethodInfo> GetMethods()
+            {
+                yield return property.GetMethod;
+                yield return property.SetMethod;
+            }
         }
 
         #endregion
@@ -896,6 +937,53 @@ namespace Documark
         protected string GetName(EventInfo @event)
         {
             return @event.Name;
+        }
+
+        protected string GetSyntax(EventInfo @event)
+        {
+            var modifiers = string.Join(' ', GetModifiers(@event));
+            var isProtected = !modifiers.Contains("protected");
+
+            var methods = "";
+            if (IsVisible(@event.AddMethod, true))
+            {
+                // If getter is protected, but only if the property itself isn't protected
+                if (@event.AddMethod.IsFamily && isProtected) { methods += "protected "; }
+                methods += "add; ";
+            }
+
+            if (IsVisible(@event.RemoveMethod, true))
+            {
+                // If setter is protected, but only if the property itself isn't protected
+                if (@event.RemoveMethod.IsFamily && !isProtected) { methods += "protected "; }
+                methods += "remove;";
+            }
+
+            // Get the return type
+            var handlerType = GetName(@event.EventHandlerType);
+
+            // Create output
+            var output = $"{modifiers} {handlerType} {GetName(@event)} {{ {methods.Trim()} }}";
+            return output.NormalizeSpaces();
+        }
+
+        protected IEnumerable<string> GetModifiers(EventInfo @event)
+        {
+            var modifiers = new HashSet<string>();
+            var methods = GetMethods();
+
+            // Get event method modifiers
+            if (methods.Any(m => m?.IsPublic ?? false)) { modifiers.Add("public"); }
+            else if (methods.Any(m => m?.IsFamily ?? false)) { modifiers.Add("protected"); }
+            if (methods.Any(m => m?.IsStatic ?? false)) { modifiers.Add("static"); }
+
+            return modifiers;
+
+            IEnumerable<MethodInfo> GetMethods()
+            {
+                yield return @event.AddMethod;
+                yield return @event.RemoveMethod;
+            }
         }
 
         #endregion
@@ -1073,7 +1161,7 @@ namespace Documark
             var root = GetRootDirectory(type.Assembly);
 
             // Get the file name for storing the type document
-            var path = $"{root}/{type.Namespace}.{type.GetHumanName()}.txt";
+            var path = $"{root}/{type.Namespace}/{type.GetHumanName()}.txt";
             path = Path.ChangeExtension(path, Extension);
             return path.SanitizePath();
         }
@@ -1084,7 +1172,7 @@ namespace Documark
             var root = GetRootDirectory(type.Assembly);
 
             // Get the file name for storing the type document
-            var path = $"{root}/{type.Namespace}.{type.GetHumanName()}.{GetName(member)}.txt";
+            var path = $"{root}/{type.Namespace}/{type.GetHumanName()}/{GetName(member)}.txt";
             path = Path.ChangeExtension(path, Extension);
             return path.SanitizePath();
         }
