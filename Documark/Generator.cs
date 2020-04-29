@@ -113,22 +113,22 @@ namespace Documark
                 Constructors = type.GetConstructors(InstanceBinding).Where(m => IsVisible(m)).ToArray();
 
                 // Get Instance Members
-                InstanceFields = type.GetFields(InstanceBinding).Where(m => IsVisible(m)).ToArray();
-                InstanceProperties = type.GetProperties(InstanceBinding).Where(m => IsVisible(m)).ToArray();
-                InstanceMethods = type.GetMethods(InstanceBinding).Where(m => IsVisible(m)).ToArray();
-                InstanceEvents = type.GetEvents(InstanceBinding).Where(m => IsVisible(m)).ToArray();
+                InstanceFields = type.GetFields(InstanceBinding).Where(m => IsVisible(m)).OrderBy(m => GetName(m)).ToArray();
+                InstanceProperties = type.GetProperties(InstanceBinding).Where(m => IsVisible(m)).OrderBy(m => GetName(m)).ToArray();
+                InstanceMethods = type.GetMethods(InstanceBinding).Where(m => IsVisible(m)).OrderBy(m => GetName(m)).ToArray();
+                InstanceEvents = type.GetEvents(InstanceBinding).Where(m => IsVisible(m)).OrderBy(m => GetName(m)).ToArray();
 
                 // Get Static Members
-                StaticFields = type.GetFields(StaticBinding).Where(m => IsVisible(m)).ToArray();
-                StaticProperties = type.GetProperties(StaticBinding).Where(m => IsVisible(m)).ToArray();
-                StaticMethods = type.GetMethods(StaticBinding).Where(m => IsVisible(m)).ToArray();
-                StaticEvents = type.GetEvents(StaticBinding).Where(m => IsVisible(m)).ToArray();
+                StaticFields = type.GetFields(StaticBinding).Where(m => IsVisible(m)).OrderBy(m => GetName(m)).ToArray();
+                StaticProperties = type.GetProperties(StaticBinding).Where(m => IsVisible(m)).OrderBy(m => GetName(m)).ToArray();
+                StaticMethods = type.GetMethods(StaticBinding).Where(m => IsVisible(m)).OrderBy(m => GetName(m)).ToArray();
+                StaticEvents = type.GetEvents(StaticBinding).Where(m => IsVisible(m)).OrderBy(m => GetName(m)).ToArray();
 
                 // Get Concatenated Members
-                Fields = InstanceFields.Concat(StaticFields).ToArray();
-                Properties = InstanceProperties.Concat(StaticProperties).ToArray();
-                Methods = InstanceMethods.Concat(StaticMethods).ToArray();
-                Events = InstanceEvents.Concat(StaticEvents).ToArray();
+                Fields = InstanceFields.Concat(StaticFields).OrderBy(m => GetName(m)).ToArray();
+                Properties = InstanceProperties.Concat(StaticProperties).OrderBy(m => GetName(m)).ToArray();
+                Methods = InstanceMethods.Concat(StaticMethods).OrderBy(m => GetName(m)).ToArray();
+                Events = InstanceEvents.Concat(StaticEvents).OrderBy(m => GetName(m)).ToArray();
 
                 // 
                 InstanceMembers = ConcatMembers(InstanceFields, InstanceProperties, InstanceMethods, InstanceEvents).ToArray();
@@ -152,8 +152,8 @@ namespace Documark
         private string GenerateAssemblyHeader(Assembly assembly)
         {
             var header = "";
-            header += $"{Bold("Framework")}: {GetFrameworkString()}  \n";
-            header += $"{Bold("Assembly")}: {Link(GetName(assembly), GetPath(assembly))}  \n";
+            header += $"{Bold("Framework")}: {GetFrameworkString()}" + LineBreak();
+            header += $"{Bold("Assembly")}: {Link(GetName(assembly), GetPath(assembly))}";
             return header;
         }
 
@@ -161,7 +161,6 @@ namespace Documark
         {
             var text = Header(HeaderSize.Large, Escape(GetName(CurrentAssembly)));
             text += QuoteIndent(GenerateAssemblyHeader(CurrentAssembly));
-            text += "\n\n";
 
             var dependencies = GetDependencies();
             if (dependencies.Any())
@@ -171,18 +170,21 @@ namespace Documark
             }
 
             // Generate TOC
+            // Group by namespaces
             foreach (var namespaceGroup in Types.GroupBy(t => t.Namespace).OrderBy(g => g.Key))
             {
+                // Write namespace title
                 text += Header(HeaderSize.Medium, $"{namespaceGroup.Key}");
 
-                foreach (var typeGroup in namespaceGroup.GroupBy(t => GetObjectType(t)).OrderBy(g => g.Key))
+                // Group by object kind (class, enum, etc)
+                foreach (var typeGroup in namespaceGroup.GroupBy(t => GetObjectKind(t)).OrderBy(g => g.Key))
                 {
-                    // 
+                    // Write object kind title
                     text += Header(HeaderSize.Small, $"{typeGroup.Key}");
 
                     // Generate type table
-                    text += Table("Name", "Summary", typeGroup.OrderBy(t => GetTypeSortKey(t))
-                                                              .Select(t => (Link(GetName(t), GetPath(t)), GetSummary(t).CollapseSpaces())));
+                    text += Table(new[] { "Name", "Summary" }, typeGroup.OrderBy(t => GetTypeSortKey(t))
+                                                              .Select(t => new[] { GetLink(t), GetSummary(t, true).Summarize() }));
                 }
             }
 
@@ -200,25 +202,27 @@ namespace Documark
         protected virtual string GenerateTypeDocument()
         {
             var text = Header(HeaderSize.Large, Escape(GetName(CurrentAssembly)));
-            text += QuoteIndent(GenerateAssemblyHeader(CurrentAssembly)) + "\n";
+            text += QuoteIndent(GenerateAssemblyHeader(CurrentAssembly));
 
-            var header = Bold("Namespace") + ": " + Link(CurrentType.Namespace, GetPath(CurrentType.Assembly)) + "  \n";
-            text += Header(HeaderSize.Medium, Escape(GetName(CurrentType) + " " + GetObjectType(CurrentType)));
-            text += QuoteIndent(header) + "\n";
+            // Write type header (namespace, name, class/struct/etc)
+            text += Header(HeaderSize.Medium, Escape($"{GetName(CurrentType)} ({GetObjectKind(CurrentType)})"));
+            text += QuoteIndent(Bold("Namespace") + ": " + Link(CurrentType.Namespace, GetPath(CurrentType.Assembly)));
 
             if (CurrentType.IsDelegate())
             {
-                text += GetSummary(CurrentType) + "\n\n";
-                text += Code(GetDelegateSyntax(CurrentType)) + "\n\n";
-                text += GetRemarks(CurrentType) + "\n\n";
-                text += GetExample(CurrentType) + "\n\n";
+                text += Paragraph(GetSummary(CurrentType));
+                text += Code(GetDelegateSyntax(CurrentType));
+                text += Paragraph(GenerateAttributeBadges(CurrentType));
+                text += Paragraph(GetRemarks(CurrentType));
+                text += Paragraph(GetExample(CurrentType));
             }
             else
             {
-                text += GetSummary(CurrentType) + "\n\n";
-                text += Code(GetSyntax(CurrentType)) + "\n\n";
-                text += GetRemarks(CurrentType) + "\n\n";
-                text += GetExample(CurrentType) + "\n\n";
+                text += Paragraph(GetSummary(CurrentType));
+                text += Code(GetSyntax(CurrentType));
+                text += Paragraph(GenerateAttributeBadges(CurrentType));
+                text += Paragraph(GetRemarks(CurrentType));
+                text += Paragraph(GetExample(CurrentType));
 
                 if (CurrentType.IsEnum)
                 {
@@ -243,13 +247,15 @@ namespace Documark
                 throw new InvalidOperationException("All members must be declared from the current type.");
             }
 
+            var firstMember = members.First();
+
             var text = Header(HeaderSize.Large, Escape(GetName(CurrentAssembly)));
-            text += QuoteIndent(GenerateAssemblyHeader(CurrentAssembly)) + "\n";
-            text += Header(HeaderSize.Medium, Escape(GetName(CurrentType) + "." + GetName(members.First())));
+            text += QuoteIndent(GenerateAssemblyHeader(CurrentAssembly));
+            text += Header(HeaderSize.Medium, Escape(GetName(CurrentType) + "." + GetName(firstMember) + " (" + firstMember.MemberType + ")"));
 
             //
-            var header = Bold("Namespace") + ": " + Link(CurrentType.Namespace, GetPath(CurrentType.Assembly)) + "  \n";
-            header += Bold("Declaring Type") + ": " + Link(GetName(CurrentType), GetPath(CurrentType)) + "  \n";
+            var header = Bold("Namespace") + ": " + Link(CurrentType.Namespace, GetPath(CurrentType.Assembly)) + LineBreak();
+            header += Bold("Declaring Type") + ": " + GetLink(CurrentType);
             text += QuoteIndent(header) + "\n";
 
             // Write members to document
@@ -288,70 +294,75 @@ namespace Documark
                 text += Header(HeaderSize.Small, "Inherits");
                 text += string.Join(", ", inherits.Select(t =>
                 {
-                    if (Documentation.IsLoaded(t)) { return Link(GetName(t), GetPath(t)); }
+                    if (Documentation.IsLoaded(t)) { return GetLink(t); }
                     else { return Escape(GetName(t)); }
                 }));
                 text += "\n\n";
+            }
+
+            var constants = StaticFields.Where(f => IsConstant(f));
+            if (constants.Any())
+            {
+                text += Header(HeaderSize.Small, "Constants");
+                text += GenerateMemberList(constants);
+                text += "\n";
             }
 
             // Emit Instance Member Summary
 
             if (InstanceFields.Count > 0)
             {
-                text += Header(HeaderSize.Tiny, "Fields");
+                text += Header(HeaderSize.Small, "Fields");
                 text += GenerateMemberList(InstanceFields);
                 text += "\n";
             }
 
             if (InstanceProperties.Count > 0)
             {
-                text += Header(HeaderSize.Tiny, "Properties");
+                text += Header(HeaderSize.Small, "Properties");
                 text += GenerateMemberList(InstanceProperties);
                 text += "\n";
             }
 
             if (InstanceMethods.Count > 0)
             {
-                text += Header(HeaderSize.Tiny, "Methods");
+                text += Header(HeaderSize.Small, "Methods");
                 text += GenerateMemberList(InstanceMethods);
                 text += "\n";
             }
 
             if (InstanceEvents.Count > 0)
             {
-                text += Header(HeaderSize.Tiny, "Events");
+                text += Header(HeaderSize.Small, "Events");
                 text += GenerateMemberList(InstanceEvents);
                 text += "\n";
             }
 
             // Emit Static Member Summary
 
-            if (StaticFields.Count > 0)
+            var staticFields = StaticFields.Where(f => !IsConstant(f));
+            if (staticFields.Any())
             {
-                text += Header(HeaderSize.Tiny, "Static Fields");
-                text += GenerateMemberList(StaticFields);
-                text += "\n";
+                text += Header(HeaderSize.Small, "Static Fields");
+                text += GenerateMemberList(staticFields) + "\n";
             }
 
             if (StaticProperties.Count > 0)
             {
-                text += Header(HeaderSize.Tiny, "Static Properties");
-                text += GenerateMemberList(StaticProperties);
-                text += "\n";
+                text += Header(HeaderSize.Small, "Static Properties");
+                text += GenerateMemberList(StaticProperties) + "\n";
             }
 
             if (StaticMethods.Count > 0)
             {
-                text += Header(HeaderSize.Tiny, "Static Methods");
-                text += GenerateMemberList(StaticMethods);
-                text += "\n";
+                text += Header(HeaderSize.Small, "Static Methods");
+                text += GenerateMemberList(StaticMethods) + "\n";
             }
 
             if (StaticEvents.Count > 0)
             {
-                text += Header(HeaderSize.Tiny, "Static Events");
-                text += GenerateMemberList(StaticEvents);
-                text += "\n";
+                text += Header(HeaderSize.Small, "Static Events");
+                text += GenerateMemberList(StaticEvents) + "\n";
             }
 
             if (Constructors.Any())
@@ -363,33 +374,11 @@ namespace Documark
                 }
             }
 
-            if (Fields.Any())
-            {
-                text += Header(HeaderSize.Medium, "Fields");
-                text += GenerateMemberTable(Fields);
-                text = text.Trim() + "\n\n";
-            }
-
-            if (Properties.Any())
-            {
-                text += Header(HeaderSize.Medium, "Properties");
-                text += GenerateMemberTable(Properties);
-                text = text.Trim() + "\n\n";
-            }
-
-            if (Events.Any())
-            {
-                text += Header(HeaderSize.Medium, "Events");
-                text += GenerateMemberTable(Events);
-                text = text.Trim() + "\n\n";
-            }
-
-            if (Methods.Any())
-            {
-                text += Header(HeaderSize.Medium, "Methods");
-                text += GenerateMemberTable(Methods);
-                text = text.Trim() + "\n\n";
-            }
+            // Generate Member Tables
+            text += GenerateMembersTables("Fields", InstanceFields, StaticFields);
+            text += GenerateMembersTables("Properties", InstanceProperties, StaticProperties);
+            text += GenerateMembersTables("Events", InstanceEvents, StaticEvents);
+            text += GenerateMembersTables("Methods", InstanceMethods, StaticMethods);
 
             text = text.Trim() + "\n\n";
             return text;
@@ -398,7 +387,7 @@ namespace Documark
         private string GenerateEnumBody()
         {
             var text = "";
-            text += Table("Name", "Summary", Fields.Select(m => (GetName(m), GetSummary(m).CollapseSpaces())));
+            text += Table(new[] { "Name", "Summary" }, Fields.Select(m => new[] { GetName(m), GetSummary(m).CollapseSpaces() }));
 
             text = text.Trim() + "\n\n";
             return text;
@@ -408,10 +397,11 @@ namespace Documark
         {
             var text = "";
             text += Header(HeaderSize.Tiny, GetName(field));
-            text += GetSummary(field) + "\n\n";
-            text += Code(GetSyntax(field)) + "\n\n";
-            text += GetRemarks(field) + "\n\n";
-            text += GetExample(field) + "\n\n";
+            text += Paragraph(GetSummary(field));
+            text += Code(GetSyntax(field));
+            text += Paragraph(GenerateAttributeBadges(field));
+            text += Paragraph(GetRemarks(field));
+            text += Paragraph(GetExample(field));
             return text;
         }
 
@@ -419,10 +409,13 @@ namespace Documark
         {
             var text = "";
             text += Header(HeaderSize.Small, GetName(property));
-            text += GetSummary(property) + "\n\n";
-            text += Code(GetSyntax(property)) + "\n\n";
-            text += GetRemarks(property) + "\n\n";
-            text += GetExample(property) + "\n\n";
+            text += Paragraph(GetSummary(property));
+            text += Code(GetSyntax(property));
+            text += Paragraph(GetParameterSummary(property)); // ie, returns
+            text += Paragraph(GenerateAttributeBadges(property));
+            text += Paragraph(GetRemarks(property));
+            text += Paragraph(GetExample(property));
+
             return text;
         }
 
@@ -430,11 +423,12 @@ namespace Documark
         {
             var text = "";
             text += Header(HeaderSize.Tiny, GetName(@event));
-            text += GetSummary(@event) + "\n\n";
-            text += Code(GetSyntax(@event)) + "\n\n";
-            text += $"Type: {InlineCode(GetName(@event.EventHandlerType))}\n\n";
-            text += GetRemarks(@event) + "\n\n";
-            text += GetExample(@event) + "\n\n";
+            text += Paragraph(GetSummary(@event));
+            text += Code(GetSyntax(@event));
+            text += Paragraph(GenerateAttributeBadges(@event));
+            text += Paragraph($"Type: {InlineCode(GetName(@event.EventHandlerType))}");
+            text += Paragraph(GetRemarks(@event));
+            text += Paragraph(GetExample(@event));
             return text;
         }
 
@@ -442,37 +436,127 @@ namespace Documark
         {
             var text = "";
             text += Header(HeaderSize.Small, GetMethodSignature(method, true));
-            text += GetSummary(method) + "\n\n";
+            text += Paragraph(GetSummary(method));
             text += Code(GetSyntax(method));
-            // todo: method paramters
-            text += GetRemarks(method) + "\n\n";
-            text += GetExample(method) + "\n\n";
+            text += Paragraph(GenerateAttributeBadges(method));
+            text += Paragraph(GetParameterSummary(method));
+            text += Paragraph(GetRemarks(method));
+            text += Paragraph(GetExample(method));
             return text;
+        }
+
+        private string GenerateMembersTables(string title, IEnumerable<MemberInfo> instanceMembers, IEnumerable<MemberInfo> staticMembers)
+        {
+            var hasInstance = instanceMembers.Any();
+            var hasStatic = staticMembers.Any();
+
+            if (hasInstance || hasStatic)
+            {
+                var text = Header(HeaderSize.Medium, title);
+
+                if (hasInstance)
+                {
+                    text += Header(HeaderSize.Tiny, "Instance");
+                    text += GenerateMemberTable(instanceMembers);
+                }
+
+                if (hasStatic)
+                {
+                    if (hasInstance) { text += Header(HeaderSize.Tiny, "Static"); }
+                    text += GenerateMemberTable(staticMembers);
+                }
+
+                text = text.Trim() + "\n\n";
+                return text;
+            }
+            else
+            {
+                return string.Empty;
+            }
         }
 
         private string GenerateMemberTable(IEnumerable<MemberInfo> members)
         {
-            return Table("Name", "Summary", members.Select(f => (Link(GetName(f), GetPath(f)), Escape(GetSummary(f).CollapseSpaces()))));
+            return members switch
+            {
+                // Specific members tables
+                IEnumerable<FieldInfo> fields => GenerateMemberTable(fields),
+                IEnumerable<EventInfo> events => GenerateMemberTable(events),
+                IEnumerable<MethodInfo> methods => GenerateMemberTable(methods),
+                IEnumerable<PropertyInfo> props => GenerateMemberTable(props),
+
+                // Generic members table
+                _ => Table(new[] { "Name", "Summary" }, members.Select(m => new[] {
+                    GetLink(m),
+                    GetSummary(m, true).Summarize()
+                }))
+            };
+        }
+
+        private string GenerateMemberTable(IEnumerable<FieldInfo> fields)
+        {
+            return Table(new[] { "Name", "Type", "Summary" }, fields.Select(f => new[] {
+                GetLink(f),
+                GetLink(f.FieldType),
+                GetSummary(f, true).Summarize()
+            }));
+        }
+
+        private string GenerateMemberTable(IEnumerable<PropertyInfo> fields)
+        {
+            return Table(new[] { "Name", "Type", "Summary" }, fields.Select(f => new[] {
+                GetLink(f),
+                GetLink(f.GetMethod?.ReturnType ?? typeof(void)),
+                GetSummary(f, true).Summarize()
+            }));
+        }
+
+        private string GenerateMemberTable(IEnumerable<EventInfo> events)
+        {
+            return Table(new[] { "Name", "Handler Type", "Summary" }, events.Select(e => new[] {
+                GetLink(e),
+                GetLink(e.EventHandlerType),
+                GetSummary(e, true).Summarize()
+            }));
+        }
+
+        private string GenerateMemberTable(IEnumerable<MethodInfo> events)
+        {
+            return Table(new[] { "Name", "Return Type", "Summary" }, events.Select(m => new[] {
+                Link(GetMethodSignature(m, true).Summarize(25), GetPath(m)),
+                GetLink(m.ReturnType),
+                GetSummary(m, true).Summarize()
+            }));
         }
 
         private string GenerateMemberList(IEnumerable<MemberInfo> members)
         {
-            return string.Join(", ", members.Select(d => Link(GetName(d), GetPath(d))).Distinct()) + "\n";
+            return string.Join(", ", members.Select(m => GetLink(m)).Distinct()) + "\n";
         }
 
         #endregion
 
         #region Render XML Elements
 
-        protected virtual string RenderSee(XElement element)
+        protected virtual string RenderSee(XElement element, bool textOnly = false)
         {
             var key = element.Attribute("cref").Value;
 
             if (Documentation.TryGetType(key, out var type))
             {
                 var name = GetName(type);
-                if (Documentation.IsLoaded(type)) { return Link(name, GetPath(type)); }
-                else { return InlineCode(name); }
+                if (textOnly) { return name; }
+                else
+                {
+                    if (Documentation.IsLoaded(type))
+                    {
+                        return GetLink(type);
+                    }
+                    else
+                    {
+                        return InlineCode(name);
+                    }
+                }
             }
             else
             if (Documentation.TryGetMemberInfo(key, out var member))
@@ -484,32 +568,51 @@ namespace Documark
                     name = $"{GetName(member.DeclaringType)}.{name}";
                 }
 
-                if (Documentation.IsLoaded(member.DeclaringType)) { return Link(name, GetPath(member)); }
-                else { return InlineCode(name); }
+                if (textOnly) { return name; }
+                else
+                {
+                    if (Documentation.IsLoaded(member.DeclaringType))
+                    {
+                        return GetLink(member);
+                    }
+                    else
+                    {
+                        return InlineCode(name);
+                    }
+                }
             }
             else
             {
                 // Type was not known, just use key...
-                return InlineCode(key);
+                if (textOnly) { return key; }
+                else { return InlineCode(key); }
             }
         }
 
-        protected virtual string RenderParamRef(XElement e)
+        protected virtual string RenderParamRef(XElement e, bool textOnly = false)
         {
             return InlineCode(e.Attribute("name").Value);
         }
 
-        protected virtual string RenderPara(XElement element)
+        protected virtual string RenderPara(XElement element, bool textOnly = false)
         {
-            return $"{RenderElement(element)}\n";
+            if (element.HasElements) { return Paragraph(RenderElement(element, textOnly)); }
+            else { return LineBreak(); }
         }
 
-        protected virtual string RenderCode(XElement element)
+        protected virtual string RenderCode(XElement element, bool textOnly = false)
         {
-            return Code(RenderElement(element));
+            var text = RenderElement(element, textOnly);
+            return textOnly ? text : Code(text);
         }
 
-        protected string RenderElement(XElement element)
+        protected virtual string RenderInlineCode(XElement element, bool textOnly = false)
+        {
+            var text = RenderElement(element, textOnly);
+            return textOnly ? text : InlineCode(text);
+        }
+
+        protected string RenderElement(XElement element, bool textOnly)
         {
             var output = "";
 
@@ -521,12 +624,13 @@ namespace Documark
                     {
                         output += (e.Name.ToString()) switch
                         {
-                            "summary" => RenderElement(e),
-                            "remarks" => RenderElement(e),
-                            "paramref" => RenderParamRef(e),
-                            "para" => RenderPara(e),
-                            "code" => RenderCode(e),
-                            "see" => RenderSee(e),
+                            "summary" => RenderElement(e, textOnly),
+                            "remarks" => RenderElement(e, textOnly),
+                            "paramref" => RenderParamRef(e, textOnly),
+                            "para" => RenderPara(e, textOnly),
+                            "code" => RenderCode(e, textOnly),
+                            "c" => RenderInlineCode(e, textOnly),
+                            "see" => RenderSee(e, textOnly),
 
                             // default to converting XML to text
                             _ => node.ToString(),
@@ -550,7 +654,9 @@ namespace Documark
 
         #region Render Document Styles
 
-        protected abstract string Preformatted(string text);
+        protected abstract string LineBreak();
+
+        protected abstract string Paragraph(string text);
 
         protected abstract string QuoteIndent(string text);
 
@@ -564,7 +670,7 @@ namespace Documark
 
         protected abstract string InlineCode(string text);
 
-        protected abstract string Table(string headerLeft, string headerRight, IEnumerable<(string left, string right)> rows);
+        protected abstract string Table(string[] headers, IEnumerable<string[]> rows);
 
         protected abstract string Link(string text, string target);
 
@@ -584,113 +690,38 @@ namespace Documark
             Tiny = 4
         }
 
-        protected string GetSummary(MemberInfo method)
+        protected string GetSummary(MemberInfo method, bool textOnly = false)
         {
             var documentation = Documentation.GetDocumentation(method);
-            return RenderElement(documentation?.Element("summary"));
+            return RenderElement(documentation?.Element("summary"), textOnly);
         }
 
-        protected string GetRemarks(MemberInfo method)
+        protected string GetRemarks(MemberInfo method, bool textOnly = false)
         {
             var documentation = Documentation.GetDocumentation(method);
-            return RenderElement(documentation?.Element("remarks"));
+            return RenderElement(documentation?.Element("remarks"), textOnly);
         }
 
-        protected string GetExample(MemberInfo method)
+        protected string GetExample(MemberInfo method, bool textOnly = false)
         {
             var documentation = Documentation.GetDocumentation(method);
-            return RenderElement(documentation?.Element("example"));
+            return RenderElement(documentation?.Element("example"), textOnly);
         }
 
-        #region Badges
-
-        private string GenerateBadges(Type type)
+        private string GenerateAttributeBadges(MemberInfo info)
         {
-            var badges = new List<string>();
-            badges.AddRange(GetTypeBadges(type));
-            return GetBadgeText(badges);
+            return Paragraph(string.Join(" ", GetAttributes(info).Select(a => Badge(a))));
         }
 
-        private string GenerateBadges(ConstructorInfo constructor)
+        private IEnumerable<string> GetAttributes(MemberInfo info)
         {
-            var badges = new List<string>();
-            badges.AddRange(GetMemberBadges(constructor));
-            return GetBadgeText(badges);
-        }
-
-        private string GenerateBadges(PropertyInfo property, bool isStatic)
-        {
-            var badges = new List<string>();
-
-            // Emit Static Badge
-            if (isStatic) { badges.Add("Static"); }
-
-            // Emit Get/Set Badges
-            var canRead = property.CanRead && (property.GetMethod.IsPublic || property.GetMethod.IsFamily);
-            var canWrite = property.CanWrite && (property.SetMethod.IsPublic || property.SetMethod.IsFamily);
-            if (!canRead || !canWrite)
+            return info.GetCustomAttributes(true).Where(attr =>
             {
-                if (canRead) { badges.Add("Read Only"); }
-                if (canWrite) { badges.Add("Write Only"); }
-            }
-
-            // 
-            badges.AddRange(GetMemberBadges(property));
-            return GetBadgeText(badges);
+                // Skip attributes we know we don't want
+                if (attr is DefaultMemberAttribute) { return false; }
+                return true;
+            }).Select(s => GetName(s.GetType()));
         }
-
-        private string GenerateBadges(FieldInfo field, bool isStatic)
-        {
-            var badges = new List<string>();
-
-            // Emit Static Badge
-            if (isStatic) { badges.Add("Static"); }
-
-            // Emit Real Only
-            if (field.IsInitOnly) { badges.Add("Read Only"); }
-
-            // 
-            badges.AddRange(GetMemberBadges(field));
-            return GetBadgeText(badges);
-        }
-
-        private string GenerateBadges(MethodInfo method, bool isStatic)
-        {
-            var badges = new List<string>();
-
-            // Emit Static Badge
-            if (isStatic) { badges.Add("Static"); }
-
-            // 
-            if (method.IsAbstract) { badges.Add("Abstract"); }
-            else if (method.IsVirtual) { badges.Add("Virtual"); }
-            if (method.IsFamily) { badges.Add("Protected"); }
-
-            // 
-            badges.AddRange(GetMemberBadges(method));
-            return GetBadgeText(badges);
-        }
-
-        private IEnumerable<string> GetMemberBadges(MemberInfo info)
-        {
-            return info.GetCustomAttributes(true)
-                       .Select(s => GetName(s.GetType()));
-        }
-
-        private IEnumerable<string> GetTypeBadges(Type type)
-        {
-            return type.GetCustomAttributes(true)
-                       .Select(s => GetName(s.GetType()));
-        }
-
-        private string GetBadgeText(IEnumerable<string> tokens)
-        {
-            return tokens.Any()
-                ? $"<small>{string.Join(", ", tokens.Select(s => Badge(s))).Trim()}</small>\n"
-                : string.Empty;
-        }
-
-        #endregion
 
         #region Member
 
@@ -707,6 +738,12 @@ namespace Documark
                 // Failsafe name
                 _ => member.Name,
             };
+        }
+
+        protected string GetLink(MemberInfo member)
+        {
+            if (Documentation.IsLoaded(member.DeclaringType)) { return Link(Escape(GetName(member)), GetPath(member)); }
+            else { return InlineCode(Escape(GetName(member))); }
         }
 
         private bool IsVisible(MemberInfo member)
@@ -729,6 +766,32 @@ namespace Documark
         protected string GetName(Type type)
         {
             return type.GetHumanName();
+        }
+
+        protected string GetLink(Type type)
+        {
+            var orig = type;
+
+            // Link to the type specified by the array
+            if (type.IsArray) { type = type.GetElementType(); }
+            // todo: Do the same with List<T>, IEnumerable<T>, etc (if simple enough...)
+
+            // Determine if the type is a generic type (ie, the T of List<T>)
+            var isGeneric = type.IsGenericMethodParameter
+                         || type.IsGenericTypeParameter
+                         || type.IsGenericParameter;
+
+            // If the type is one of the loaded for documention and not-generic
+            if (Documentation.IsLoaded(type) && !isGeneric)
+            {
+                // We can render the link
+                return Link(Escape(GetName(orig)), GetPath(type));
+            }
+            else
+            {
+                // Visualize as inline-code instead.
+                return InlineCode(Escape(GetName(orig)));
+            }
         }
 
         protected string GetSyntax(Type type)
@@ -782,31 +845,31 @@ namespace Documark
             }
 
             // class, struct, delegate, etc
-            modifiers.Add($"{GetObjectType(type)}".ToLower());
+            modifiers.Add($"{GetObjectKind(type)}".ToLower());
             return modifiers;
         }
 
-        protected enum ObjectType
+        protected enum ObjectKind
         {
             Unknown,
             Class,
-            Interface,
             Struct,
-            Delegate,
-            Enum
+            Interface,
+            Enum,
+            Delegate
         }
 
-        protected static ObjectType GetObjectType(Type type)
+        protected static ObjectKind GetObjectKind(Type type)
         {
-            if (type.IsDelegate()) { return ObjectType.Delegate; }
-            else if (type.IsClass) { return ObjectType.Class; }
-            else if (type.IsEnum) { return ObjectType.Enum; }
-            else if (type.IsInterface) { return ObjectType.Interface; }
-            else if (type.IsValueType) { return ObjectType.Struct; }
+            if (type.IsDelegate()) { return ObjectKind.Delegate; }
+            else if (type.IsClass) { return ObjectKind.Class; }
+            else if (type.IsEnum) { return ObjectKind.Enum; }
+            else if (type.IsInterface) { return ObjectKind.Interface; }
+            else if (type.IsValueType) { return ObjectKind.Struct; }
             else
             {
                 // todo: throw exception?
-                return ObjectType.Unknown;
+                return ObjectKind.Unknown;
             }
         }
 
@@ -852,6 +915,16 @@ namespace Documark
             return !m.IsSpecialName && (m.IsFamily || m.IsPublic);
         }
 
+        private bool IsConstant(FieldInfo f)
+        {
+            return f.IsLiteral && !f.IsInitOnly;
+        }
+
+        private bool IsReadOnly(FieldInfo f)
+        {
+            return f.IsInitOnly && f.IsInitOnly;
+        }
+
         protected string GetName(FieldInfo p)
         {
             return p.Name;
@@ -862,11 +935,19 @@ namespace Documark
             var list = new List<string>();
             if (field.IsPublic) { list.Add("public"); }
             if (field.IsFamily) { list.Add("protected"); }
-            if (field.IsStatic) { list.Add("static"); }
+            if (IsConstant(field)) { list.Add("const"); }
+            else if (field.IsStatic) { list.Add("static"); }
+            if (IsReadOnly(field)) { list.Add("readonly"); }
 
             var access = string.Join(' ', list);
 
             var text = $"{access.Trim()} {GetName(field.FieldType)} {GetName(field)}";
+
+            if (field.IsLiteral)
+            {
+                text += $" = {field.GetRawConstantValue()}";
+            }
+
             return text.CollapseSpaces().Trim();
         }
 
@@ -922,6 +1003,18 @@ namespace Documark
                 var text = $"{modifiers} {returnType} {GetName(property)} {{ {methods.Trim()} }}";
                 return text.CollapseSpaces();
             }
+        }
+
+        private string GetParameterSummary(PropertyInfo property)
+        {
+            var text = "";
+
+            if (property.CanRead)
+            {
+                text += QuoteIndent(Bold("Returns") + ": " + GetLink(property.GetMethod.ReturnType));
+            }
+
+            return text;
         }
 
         protected IEnumerable<string> GetModifiers(PropertyInfo property)
@@ -1024,7 +1117,7 @@ namespace Documark
                 if (indTick >= 0) { name = name.Substring(0, indTick); }
 
                 var genericTypes = method.GetGenericArguments().Select(t => t.GetHumanName());
-                return $"{name}<{string.Join("|", genericTypes)}>";
+                return $"{name}<{string.Join(", ", genericTypes)}>";
             }
             else
             {
@@ -1060,12 +1153,71 @@ namespace Documark
             return syntax.CollapseSpaces();
         }
 
+        private string GetParameterSummary(MethodBase method)
+        {
+            var text = "";
+
+            // Get the XML documentation and parameters
+            var documentation = Documentation.GetDocumentation(method);
+            var parameters = method.GetParameters();
+
+            // Emit parameter info
+            if (parameters.Any())
+            {
+                text += Table(new[] { "Name", "Type", "Summary" }, parameters.Select(param =>
+                {
+                    var paramText = "";
+
+                    if (documentation != null)
+                    {
+                        // Get parameter docs
+                        var paramInfo = RenderElement(documentation.Elements("param").FirstOrDefault(e => e.Attribute("name").Value == param.Name), true);
+                        paramInfo = paramInfo.Summarize();
+
+                        if (!string.IsNullOrEmpty(paramInfo))
+                        {
+                            paramText += paramInfo;
+                        }
+                    }
+
+                    return new[] {
+                        GetName(param),
+                        GetLink(param.ParameterType),
+                        paramText
+                    };
+                }));
+            }
+
+            // Emit return info
+            if (method is MethodInfo m)
+            {
+                var paramText = Bold("Returns") + " - " + GetLink(m.ReturnParameter.ParameterType);
+
+                if (documentation != null)
+                {
+                    // Get return docs
+                    var paramInfo = RenderElement(documentation?.Element("returns"), true);
+                    paramInfo = paramInfo.Summarize();
+
+                    if (!string.IsNullOrEmpty(paramInfo))
+                    {
+                        paramText += $" - {paramInfo}";
+                    }
+                }
+
+                text += QuoteIndent($"{paramText}  \n");
+            }
+
+            return text.Trim();
+        }
+
         protected IEnumerable<string> GetModifiers(MethodBase method)
         {
             var modifiers = new List<string>();
             if (method.IsPublic) { modifiers.Add("public"); }
             if (method.IsFamily) { modifiers.Add("protected"); }
             if (method.IsStatic) { modifiers.Add("static"); }
+            if (method.IsAbstract) { modifiers.Add("abstract"); }
             return modifiers;
         }
 

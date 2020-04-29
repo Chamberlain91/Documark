@@ -85,5 +85,11 @@ namespace Documark
 
             return text;
         }
+
+        public static string Summarize(this string text, int maxLength = 70)
+        {
+            return text.CollapseSpaces()
+                       .Shorten(maxLength);
+        }
     }
 }

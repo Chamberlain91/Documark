@@ -10,8 +10,8 @@ namespace Documark
         private static void Main(string[] args)
         {
             var parser = new ArgParse(); // todo: some sort of arguments syntax "[directory]"
-            parser.AddOption("output=", "o", "Set output directory name. [default: './Api']");
-            parser.AddOption("type=", "t", "Set output document type. [default: markdown]");
+            parser.AddOption("output=./Api", "o", "Set output directory name. [default: './Api']");
+            parser.AddOption("type=[markdown,html]", "t", "Set output document type.");
             // todo: type=[markdown, json] and automatically generate [default: markdown]
             //       then the parser can validate options from the list.
 
@@ -71,12 +71,12 @@ namespace Documark
                                 // Construct generator
                                 var generator = CreateGenerator(outputDirectory, generatorType);
 
-                                // Emit documentation
-                                foreach (var assembly in assemblies)
-                                {
-                                    Console.WriteLine($"- {assembly.GetName().Name}");
-                                    generator.Generate(assembly);
-                                }
+                                //// Emit documentation
+                                //foreach (var assembly in assemblies)
+                                //{
+                                //    Console.WriteLine($"- {assembly.GetName().Name}");
+                                //    generator.Generate(assembly);
+                                //}
                             }
                             else
                             {
@@ -101,6 +101,7 @@ namespace Documark
         {
             return generatorType switch
             {
+                "html" => new HtmlGenerator(outputDirectory),
                 _ => new MarkdownGenerator(outputDirectory),
             };
         }
@@ -137,12 +138,9 @@ namespace Documark
         public static void PrintError(string message)
         {
             var f = Console.ForegroundColor;
-            var b = Console.BackgroundColor;
             Console.ForegroundColor = ConsoleColor.Red;
-            Console.BackgroundColor = ConsoleColor.DarkGray;
             Console.WriteLine(message);
             Console.ForegroundColor = f;
-            Console.BackgroundColor = b;
         }
     }
 }

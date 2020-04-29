@@ -29,8 +29,8 @@ namespace Documark
             // Append link metadata
             text += GenerateLinks();
 
-            // Collapse 2+ newlines into exactly 2 newlines.
-            // This is to prettify the document.
+            // To prettify the document, we will collapse two or
+            // more newlines into exactly two newlines.
             text = _newlineCollapse.Replace(text, "\n\n");
             text = text.Replace("\t", "    ");
 
@@ -49,46 +49,23 @@ namespace Documark
 
         #region Document Styles
 
-        protected override string Escape(string text)
+        protected override string LineBreak()
         {
-            text = text?.Replace("<", "\\<");
-            text = text?.Replace("|", "\\|");
-            return text;
+            return $"  \n";
         }
 
-        protected override string Badge(string text)
-        {
-            return InlineCode(text);
-        }
-
-        protected override string Link(string text, string target)
-        {
-            var current = Path.GetDirectoryName(CurrentPath);
-            target = Path.GetRelativePath(current, target);
-            target = target.SanitizePath();
-
-            return $"[{Escape(text)}][{GetLinkIndex()}]";
-
-            int GetLinkIndex()
-            {
-                if (!_links.TryGetValue(target, out var index))
-                {
-                    _links[target] = (index = _links.Count);
-                }
-                return index;
-            }
-        }
-
-        protected override string Preformatted(string text)
+        protected override string Paragraph(string text)
         {
             if (string.IsNullOrWhiteSpace(text)) { return string.Empty; }
-            return string.Join(null, text.Split('\n').Select(s => $"    {s}"));
+            else { return text + "\n\n"; }
         }
 
-        protected override string QuoteIndent(string text)
+        protected override string Header(HeaderSize size, string text)
         {
-            if (string.IsNullOrWhiteSpace(text)) { return string.Empty; }
-            return string.Join(null, text.Split('\n', StringSplitOptions.RemoveEmptyEntries).Select(s => $"> {s}\n"));
+            if (size <= 0) { throw new ArgumentException("Header type must be 1-6."); }
+
+            var h = new string('#', (int) size);
+            return $"{h} {text.Trim()}\n\n";
         }
 
         protected override string Italics(string text)
@@ -109,26 +86,75 @@ namespace Documark
             return $"`{text}`";
         }
 
-        protected override string Table(string headerLeft, string headerRight, IEnumerable<(string left, string right)> rows)
+        protected override string Code(string text, string type = "cs")
+        {
+            return $"```{type}\n{text.Trim()}\n```\n\n";
+        }
+
+        protected override string Badge(string text)
+        {
+            return InlineCode(text);
+        }
+
+        protected override string QuoteIndent(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) { return string.Empty; }
+            return string.Join(null, text.Split('\n', StringSplitOptions.RemoveEmptyEntries).Select(s => $"> {s}\n")) + "\n\n";
+        }
+
+        protected override string Link(string text, string target)
+        {
+            var current = Path.GetDirectoryName(CurrentPath);
+            target = Path.GetRelativePath(current, target);
+            target = target.SanitizePath();
+
+            return $"[{text}][{GetLinkIndex()}]";
+
+            int GetLinkIndex()
+            {
+                if (!_links.TryGetValue(target, out var index))
+                {
+                    _links[target] = (index = _links.Count);
+                }
+
+                return index;
+            }
+        }
+
+        protected override string Table(string[] headers, IEnumerable<string[]> rows)
         {
             if (rows.Any())
             {
-                int lSize = headerLeft.Length, rSize = headerRight.Length;
+                // Compute initial sizes
+                var sizes = new int[headers.Length];
+                for (var col = 0; col < headers.Length; col++)
+                {
+                    sizes[col] = headers[col].Length;
+                }
 
                 // Measure Rows
-                foreach (var (left, right) in rows)
+                foreach (var row in rows)
                 {
-                    lSize = Math.Max(lSize, left.Length);
-                    rSize = Math.Max(rSize, right.Length);
+                    if (row.Length != headers.Length)
+                    {
+                        Console.WriteLine("ERROR: Table row inconsistent size.");
+                        continue;
+                    }
+
+                    // Measure each maximal columns size
+                    for (var col = 0; col < headers.Length; col++)
+                    {
+                        sizes[col] = Math.Max(sizes[col], row[col].Length);
+                    }
                 }
 
                 var markdown = "";
-                markdown += $"| {Str(headerLeft, lSize)} | {Str(headerRight, rSize)} |\n";
-                markdown += $"|{Rep('-', lSize + 2)}|{Rep('-', rSize + 2)}|\n";
+                markdown += "| " + string.Join(" | ", headers.Select((s, i) => Str(s, sizes[i]))) + " |\n";
+                markdown += "|-" + string.Join("-|-", headers.Select((s, i) => Rep('-', sizes[i]))) + "-|\n";
 
-                foreach (var (left, right) in rows)
+                foreach (var row in rows)
                 {
-                    markdown += $"| {Str(left, lSize)} | {Str(right, rSize)} |\n";
+                    markdown += "| " + string.Join(" | ", row.Select((s, i) => Str(s, sizes[i]))) + " |\n";
                 }
 
                 return markdown + "\n";
@@ -160,24 +186,13 @@ namespace Documark
             return text + "\n";
         }
 
-        protected override string Header(HeaderSize size, string text)
+        protected override string Escape(string text)
         {
-            if (size <= 0) { throw new ArgumentException("Header type must be 1-6."); }
-
-            var h = new string('#', (int) size);
-            return $"{h} {text.Trim()}\n\n";
-        }
-
-        protected override string Code(string text, string type = "cs")
-        {
-            return $"```{type}\n{text.Trim()}\n```\n\n";
+            text = text?.Replace("<", "\\<");
+            text = text?.Replace("|", "\\|");
+            return text;
         }
 
         #endregion
-
-        protected override string RenderPara(XElement element)
-        {
-            return $"{RenderElement(element)}  \n";
-        }
     }
 }

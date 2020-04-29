@@ -1,15 +1,20 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.RegularExpressions;
 
 namespace Documark
 {
     internal class ArgParse
     {
+        private readonly Dictionary<string, string> _defaults;
         private readonly Dictionary<string, Option> _options;
+
+        private Regex _arrayOption = new Regex(@"=\[(\w+(,\w+)*)\]$", RegexOptions.Compiled | RegexOptions.ECMAScript);
 
         public ArgParse()
         {
+            _defaults = new Dictionary<string, string>();
             _options = new Dictionary<string, Option>();
             AddOption("help", "h", "Show this help");
         }
@@ -24,20 +29,55 @@ namespace Documark
         {
             if (alternatives == null) { alternatives = Array.Empty<string>(); }
 
+            var values = Array.Empty<string>();
             var type = ArgumentType.Flag;
-            if (name.EndsWith("="))
+
+            var initial = default(string);
+
+            // Is the option formated akin to "a=[b,c]"?
+            var matchArray = _arrayOption.Match(name);
+            if (matchArray.Success)
             {
+                values = matchArray.Groups[1].Value.Split(',');
+                initial = values[0]; // arrays always default to the first item
+
+                // Extract name from formatted string
+                var idx = name.IndexOf("=");
+                name = name.Substring(0, idx);
                 type = ArgumentType.Value;
-                name = name.Substring(0, name.Length - 1);
+            }
+            else
+            // Is the option formatted akin to "x="
+            if (name.Contains("="))
+            {
+                var key = name;
+
+                var idx = key.IndexOf("=");
+                name = key.Substring(0, idx);
+                type = ArgumentType.Value;
+
+                // If text exists after the "=", extrct it as a default value.
+                if (idx + 1 < key.Length)
+                {
+                    initial = key.Substring(idx + 1);
+                }
             }
 
+            // todo: validate name to be only letters
+
             // Store option
-            _options[name] = new Option(name, alternatives, type, description);
+            _options[name] = new Option(name, alternatives, values, type, description);
 
             // Record alternatives
             foreach (var alt in alternatives)
             {
                 _options[alt] = _options[name];
+            }
+
+            // 
+            if (!string.IsNullOrWhiteSpace(initial))
+            {
+                _defaults[name] = initial;
             }
         }
 
@@ -53,7 +93,8 @@ namespace Documark
                 }
                 else
                 {
-                    str += $"--{opt.Name} [{string.Join(", ", opt.Alternatives.Select(s => $"-{s}"))}]\n\t{opt.Description}\n\n";
+                    _defaults.TryGetValue(opt.Name, out var def);
+                    str += $"--{opt.Name} [{string.Join(", ", opt.Alternatives.Select(s => $"-{s}"))}]\n\t{opt.Description}{def}\n\n";
                 }
             }
 
@@ -76,7 +117,7 @@ namespace Documark
 
         public ArgParseResult Parse(string[] arguments)
         {
-            var dict = new List<(string, string)>();
+            var dict = new Dictionary<string, string>(_defaults);
             var args = new List<string>();
 
             var e = ((IEnumerable<string>) arguments).GetEnumerator();
@@ -113,8 +154,19 @@ namespace Documark
                         {
                             if (e.MoveNext())
                             {
+                                var value = e.Current;
+
+                                if (option.Values.Count > 0)
+                                {
+                                    // We expect a value from a fixed set
+                                    if (!option.Values.Contains(value))
+                                    {
+                                        throw new ArgParseException($"Option '{option.Name}' must be one of [{string.Join(", ", option.Values)}]");
+                                    }
+                                }
+
                                 // Append parsed option
-                                dict.Add((option.Name, e.Current));
+                                dict[option.Name] = value;
                             }
                             else
                             {
@@ -125,7 +177,7 @@ namespace Documark
                         else
                         {
                             // Append parsed switch
-                            dict.Add((option.Name, null));
+                            dict[option.Name] = null;
                         }
                     }
                     else
@@ -139,18 +191,28 @@ namespace Documark
                 }
             }
 
-            return new ArgParseResult(args.ToArray(), dict);
+            // 
+            var output = new List<(string, string)>();
+            foreach (var (key, val) in dict)
+            {
+                output.Add((key, val));
+            }
+
+            return new ArgParseResult(args.ToArray(), output);
         }
 
         private class Option
         {
-            public Option(string name, string[] alternatives, ArgumentType type, string description)
+            public Option(string name, string[] alternatives, string[] values, ArgumentType type, string description)
             {
                 Alternatives = alternatives;
+                Values = values;
                 Type = type;
                 Name = name;
                 Description = description;
             }
+
+            public IReadOnlyList<string> Values { get; }
 
             public IReadOnlyList<string> Alternatives { get; }
 
