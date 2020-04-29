@@ -182,13 +182,13 @@ namespace Documark
 
                     // Generate type table
                     text += Table("Name", "Summary", typeGroup.OrderBy(t => GetTypeSortKey(t))
-                                                              .Select(t => (Link(GetName(t), GetPath(t)), GetSummary(t).NormalizeSpaces())));
+                                                              .Select(t => (Link(GetName(t), GetPath(t)), GetSummary(t).CollapseSpaces())));
                 }
             }
 
             return text;
 
-            static string GetTypeSortKey(Type type)
+            string GetTypeSortKey(Type type)
             {
                 // Has base type, is not object and is not a value type
                 return type.BaseType != null && type.BaseType != typeof(object) && !type.IsValueType
@@ -203,7 +203,7 @@ namespace Documark
             text += QuoteIndent(GenerateAssemblyHeader(CurrentAssembly)) + "\n";
 
             var header = Bold("Namespace") + ": " + Link(CurrentType.Namespace, GetPath(CurrentType.Assembly)) + "  \n";
-            text += Header(HeaderSize.Medium, Escape(GetName(CurrentType)));
+            text += Header(HeaderSize.Medium, Escape(GetName(CurrentType) + " " + GetObjectType(CurrentType)));
             text += QuoteIndent(header) + "\n";
 
             if (CurrentType.IsDelegate())
@@ -249,7 +249,7 @@ namespace Documark
 
             //
             var header = Bold("Namespace") + ": " + Link(CurrentType.Namespace, GetPath(CurrentType.Assembly)) + "  \n";
-            header += Bold("Type") + ": " + Link(GetName(CurrentType), GetPath(CurrentType)) + "  \n";
+            header += Bold("Declaring Type") + ": " + Link(GetName(CurrentType), GetPath(CurrentType)) + "  \n";
             text += QuoteIndent(header) + "\n";
 
             // Write members to document
@@ -398,7 +398,7 @@ namespace Documark
         private string GenerateEnumBody()
         {
             var text = "";
-            text += Table("Name", "Summary", Fields.Select(m => (GetName(m), GetSummary(m).NormalizeSpaces())));
+            text += Table("Name", "Summary", Fields.Select(m => (GetName(m), GetSummary(m).CollapseSpaces())));
 
             text = text.Trim() + "\n\n";
             return text;
@@ -443,7 +443,7 @@ namespace Documark
             var text = "";
             text += Header(HeaderSize.Small, GetMethodSignature(method, true));
             text += GetSummary(method) + "\n\n";
-            text += Code(GetMethodSyntax(method));
+            text += Code(GetSyntax(method));
             // todo: method paramters
             text += GetRemarks(method) + "\n\n";
             text += GetExample(method) + "\n\n";
@@ -452,7 +452,7 @@ namespace Documark
 
         private string GenerateMemberTable(IEnumerable<MemberInfo> members)
         {
-            return Table("Name", "Summary", members.Select(f => (Link(GetName(f), GetPath(f)), Escape(GetSummary(f).NormalizeSpaces()))));
+            return Table("Name", "Summary", members.Select(f => (Link(GetName(f), GetPath(f)), Escape(GetSummary(f).CollapseSpaces()))));
         }
 
         private string GenerateMemberList(IEnumerable<MemberInfo> members)
@@ -536,7 +536,7 @@ namespace Documark
                     {
                         // Gets the string representation of the node
                         var text = node.ToString();
-                        output += text.NormalizeSpaces().Trim();
+                        output += text.CollapseSpaces().Trim();
                     }
 
                     output += " ";
@@ -692,6 +692,8 @@ namespace Documark
 
         #endregion
 
+        #region Member
+
         protected string GetName(MemberInfo member)
         {
             return member switch
@@ -707,18 +709,33 @@ namespace Documark
             };
         }
 
+        private bool IsVisible(MemberInfo member)
+        {
+            return member switch
+            {
+                MethodInfo method => IsVisible(method),
+                ConstructorInfo constructor => IsVisible(constructor),
+                PropertyInfo property => IsVisible(property),
+                FieldInfo field => IsVisible(field),
+                EventInfo @event => IsVisible(@event),
+                _ => false,
+            };
+        }
+
+        #endregion
+
         #region Type
 
-        protected static string GetName(Type type)
+        protected string GetName(Type type)
         {
             return type.GetHumanName();
         }
 
-        protected static string GetSyntax(Type type)
+        protected string GetSyntax(Type type)
         {
             // Get access modifiers (ie, 'public static class')
             var access = string.Join(' ', GetModifiers(type));
-            access = access.NormalizeSpaces();
+            access = access.CollapseSpaces();
             access = access.Trim();
 
             // 
@@ -727,10 +744,11 @@ namespace Documark
             // Combine access, name and inheritence list
             var text = $"{access} {type.GetHumanName()}";
             if (inherits.Count > 0) { text += $" : {string.Join(", ", inherits.Select(t => t.GetHumanName()))}"; }
-            return text.NormalizeSpaces().Trim();
+
+            return text.Trim();
         }
 
-        protected static IReadOnlyList<Type> GetInherits(Type type)
+        protected IReadOnlyList<Type> GetInherits(Type type)
         {
             var inherits = new List<Type>();
             if (!type.IsValueType && type.BaseType != typeof(object) && type.BaseType != null)
@@ -753,9 +771,9 @@ namespace Documark
 
             // Visibility modifiers
             if (type.IsPublic) { modifiers.Add("public"); }
-            else if (type.IsNestedFamily) { modifiers.Add("protected"); }
+            else if (type.IsNestedFamily || type.IsNestedFamORAssem) { modifiers.Add("protected"); }
 
-            if (!type.IsValueType && !type.IsDelegate())
+            if (!type.IsValueType && !type.IsDelegate() && !type.IsInterface)
             {
                 // Class modifiers
                 if (type.IsStaticClass()) { modifiers.Add("static"); }
@@ -829,7 +847,7 @@ namespace Documark
 
         #region Field
 
-        private static bool IsVisible(FieldInfo m)
+        private bool IsVisible(FieldInfo m)
         {
             return !m.IsSpecialName && (m.IsFamily || m.IsPublic);
         }
@@ -849,7 +867,7 @@ namespace Documark
             var access = string.Join(' ', list);
 
             var text = $"{access.Trim()} {GetName(field.FieldType)} {GetName(field)}";
-            return text.NormalizeSpaces().Trim();
+            return text.CollapseSpaces().Trim();
         }
 
         #endregion
@@ -897,12 +915,12 @@ namespace Documark
             {
                 var args = string.Join(", ", parameters);
                 var text = $"{modifiers} {returnType} this[{args}] {{ {methods.Trim()} }}";
-                return text.NormalizeSpaces();
+                return text.CollapseSpaces();
             }
             else
             {
                 var text = $"{modifiers} {returnType} {GetName(property)} {{ {methods.Trim()} }}";
-                return text.NormalizeSpaces();
+                return text.CollapseSpaces();
             }
         }
 
@@ -964,7 +982,7 @@ namespace Documark
 
             // Create output
             var output = $"{modifiers} {handlerType} {GetName(@event)} {{ {methods.Trim()} }}";
-            return output.NormalizeSpaces();
+            return output.CollapseSpaces();
         }
 
         protected IEnumerable<string> GetModifiers(EventInfo @event)
@@ -1021,7 +1039,7 @@ namespace Documark
             return $"{GetName(method)}({parameters})";
         }
 
-        protected string GetMethodSyntax(MethodBase method)
+        protected string GetSyntax(MethodBase method)
         {
             return GetMethodSyntax(GetName(method), method);
         }
@@ -1039,7 +1057,7 @@ namespace Documark
             // Create syntax string (ie, 'public int Add(int x, int y)')
             var parameters = string.Join(", ", GetParameters(method, false));
             var syntax = $"{access} {returnName} {name}({parameters})";
-            return syntax.NormalizeSpaces();
+            return syntax.CollapseSpaces();
         }
 
         protected IEnumerable<string> GetModifiers(MethodBase method)
@@ -1114,7 +1132,7 @@ namespace Documark
             // Return either the compact or full parameter signature
             var signature = $"{prefix}{paramTypeName}";
             if (!compact) { signature += $" {GetName(parameter)}{suffix}"; }
-            return signature;
+            return signature.Trim();
         }
 
         #endregion

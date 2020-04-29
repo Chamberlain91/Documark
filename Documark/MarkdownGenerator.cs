@@ -32,6 +32,7 @@ namespace Documark
             // Collapse 2+ newlines into exactly 2 newlines.
             // This is to prettify the document.
             text = _newlineCollapse.Replace(text, "\n\n");
+            text = text.Replace("\t", "    ");
 
             string GenerateLinks()
             {

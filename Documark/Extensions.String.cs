@@ -68,7 +68,7 @@ namespace Documark
                        .Replace("\\", "/");
         }
 
-        public static string NormalizeSpaces(this string text)
+        public static string CollapseSpaces(this string text)
         {
             return _spaces.Replace(text, " ");
         }
