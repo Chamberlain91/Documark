@@ -24,8 +24,7 @@ namespace Documark
         {
             // todo: css/template?
 
-            var path = Path.GetRelativePath(CurrentPath, OutputDirectory + "/doc-style.css");
-            path = path.SanitizePath();
+            var path = GetRelativePath(OutputDirectory + "/doc-style.css");
 
             var head = $"<link href=\"{path}\" rel=\"stylesheet\">";
 

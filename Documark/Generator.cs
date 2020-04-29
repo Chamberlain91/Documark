@@ -1347,6 +1347,13 @@ namespace Documark
             return path.SanitizePath();
         }
 
+        protected string GetRelativePath(string path)
+        {
+            var current = Path.GetDirectoryName(CurrentPath);
+            path = Path.GetRelativePath(current, path);
+            return path.SanitizePath();
+        }
+
         #endregion
 
         private static bool IsIgnoredMethodName(string name)

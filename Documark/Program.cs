@@ -53,13 +53,8 @@ namespace Documark
                             var assemblies = FindAndLoadDocumentedAssemblies(dir);
                             if (assemblies.Count > 0)
                             {
-                                var generatorType = "markdown";
-                                // todo: can replace this check with defaults ^^^
-                                if (command.HasOption("type")) { generatorType = command.GetOption("type")[0]; }
-
-                                var outputDirectory = "./Api";
-                                // todo: can replace this check with defaults ^^^
-                                if (command.HasOption("output")) { outputDirectory = command.GetOption("output")[0]; }
+                                var generatorType = command.GetOption("type")[0];
+                                var outputDirectory = command.GetOption("output")[0];
 
                                 // Collect documentation
                                 foreach (var assembly in assemblies)
@@ -71,12 +66,12 @@ namespace Documark
                                 // Construct generator
                                 var generator = CreateGenerator(outputDirectory, generatorType);
 
-                                //// Emit documentation
-                                //foreach (var assembly in assemblies)
-                                //{
-                                //    Console.WriteLine($"- {assembly.GetName().Name}");
-                                //    generator.Generate(assembly);
-                                //}
+                                // Emit documentation
+                                foreach (var assembly in assemblies)
+                                {
+                                    Console.WriteLine($"- {assembly.GetName().Name}");
+                                    generator.Generate(assembly);
+                                }
                             }
                             else
                             {

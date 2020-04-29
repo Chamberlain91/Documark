@@ -104,14 +104,12 @@ namespace Documark
 
         protected override string Link(string text, string target)
         {
-            var current = Path.GetDirectoryName(CurrentPath);
-            target = Path.GetRelativePath(current, target);
-            target = target.SanitizePath();
-
             return $"[{text}][{GetLinkIndex()}]";
 
             int GetLinkIndex()
             {
+                target = GetRelativePath(target);
+
                 if (!_links.TryGetValue(target, out var index))
                 {
                     _links[target] = (index = _links.Count);
