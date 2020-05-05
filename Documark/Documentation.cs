@@ -46,9 +46,128 @@ namespace Documark
         /// </summary>
         public static XElement GetDocumentation(string key)
         {
-            _documentation.TryGetValue(key, out var documentation);
+            // Try to get documentation information
+            if (_documentation.TryGetValue(key, out var documentation))
+            {
+                // If documentation was inherited, we should try to recurse with parent type.
+                var inheritdoc = documentation.Element("inheritdoc");
+                if (inheritdoc != null)
+                {
+                    // This element should try to get inherited documentation, recurse.
+                    if (TryGetType(key, out var type))
+                    {
+                        Console.WriteLine($"Trying to inherit docs on type: {type}");
+                    }
+                    else
+                    if (TryGetMemberInfo(key, out var member))
+                    {
+                        if (member is MethodInfo method)
+                        {
+                            // Try to inherit docs from interface
+                            var baseDoc = InheritBaseType(method);
+                            if (baseDoc != null) { return baseDoc; }
+
+                            // Try to inherit docs from interface
+                            var interfaceDoc = InheritInterface(method);
+                            if (interfaceDoc != null) { return interfaceDoc; }
+                        }
+                        else if (member is PropertyInfo property)
+                        {
+                            // Try to inherit docs from interface
+                            var baseDoc = InheritBaseType(property);
+                            if (baseDoc != null) { return baseDoc; }
+
+                            // Try to inherit docs from interface
+                            var interfaceDoc = InheritInterface(property);
+                            if (interfaceDoc != null) { return interfaceDoc; }
+                        }
+                        else
+                        {
+                            Log.Warning($"Unable to inherit docs: {key}");
+                        }
+                    }
+                }
+            }
+
             return documentation;
         }
+
+        #region InheritDoc Support
+
+        private static XElement InheritBaseType(PropertyInfo property)
+        {
+            var baseMethod = property.GetMethod.GetBaseDefinition();
+            if (property.GetMethod == baseMethod)
+            {
+                // Defined where inheriting, nothing new can be discovered.
+                return null;
+            }
+            else
+            {
+                var baseType = baseMethod.DeclaringType;
+                var baseProperty = baseType.GetProperty(property.Name);
+                return GetDocumentation(baseProperty);
+            }
+        }
+
+        private static XElement InheritInterface(PropertyInfo property)
+        {
+            // Get the declaring type
+            var methodType = property.GetMethod.DeclaringType;
+
+            // We have to scan each interface for a match
+            foreach (var @interface in methodType.GetInterfaces())
+            {
+                // Try to get the docs from the interface for property name
+                var interfaceProperty = @interface.GetProperty(property.Name);
+                if (interfaceProperty != null)
+                {
+                    return GetDocumentation(interfaceProperty);
+                }
+            }
+
+            return null;
+        }
+
+        private static XElement InheritBaseType(MethodInfo method)
+        {
+            var baseMethod = method.GetBaseDefinition();
+            if (baseMethod == method)
+            {
+                // Base method definition is on the the inheriting method, so nothing new
+                // can be discovered here!
+                return null;
+            }
+            else
+            {
+                // Recurse with requsting documentation for base method
+                return GetDocumentation(GetKey(baseMethod));
+            }
+        }
+
+        private static XElement InheritInterface(MethodInfo method)
+        {
+            var methodType = method.DeclaringType;
+            var methodBaseKey = GetMethodBaseKey(method);
+
+            // We have to scan each interface for a match
+            foreach (var @interface in methodType.GetInterfaces())
+            {
+                // Get the interface map
+                var interfaceMap = methodType.GetInterfaceMap(@interface);
+
+                // Try to get the equivalent method from the interface..
+                var interfaceMethod = interfaceMap.InterfaceMethods.FirstOrDefault(m => GetMethodBaseKey(m) == methodBaseKey);
+                if (interfaceMethod != null)
+                {
+                    return GetDocumentation(interfaceMethod);
+                }
+            }
+
+            return null;
+        }
+
+        #endregion
 
         /// <summary>
         /// Gets the XML documentation for the specified type.
@@ -168,12 +287,12 @@ namespace Documark
 
         public static string GetKey(ConstructorInfo constructor)
         {
-            return $"M:{GetMethodBaseKey(constructor)}";
+            return $"M:{GetTypeKey(constructor.DeclaringType, false)}.{GetMethodBaseKey(constructor)}";
         }
 
         public static string GetKey(MethodInfo method)
         {
-            return $"M:{GetMethodBaseKey(method)}";
+            return $"M:{GetTypeKey(method.DeclaringType, false)}.{GetMethodBaseKey(method)}";
         }
 
         public static string GetKey(FieldInfo field)
@@ -215,7 +334,7 @@ namespace Documark
             if (method is ConstructorInfo) { name = "#ctor"; }
 
             // 
-            return $"{GetTypeKey(method.DeclaringType, false)}.{name}{generic}{parameters}";
+            return $"{name}{generic}{parameters}";
         }
 
         private static string GetTypeKey(Type type, bool isParameterType)

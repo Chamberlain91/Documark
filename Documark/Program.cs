@@ -87,7 +87,7 @@ namespace Documark
             }
             catch (ArgParseException e)
             {
-                PrintError(e.Message);
+                Log.Error(e.Message);
                 Console.WriteLine("Try 'documark --help' for more information.");
             }
         }
@@ -122,20 +122,12 @@ namespace Documark
                                               e is FileLoadException)
                     {
                         // Eh, this is ok...
-                        PrintError($"Unable to load '{assemblyPath}'.");
+                        Log.Error($"Unable to load '{assemblyPath}' ({e.Message}).");
                     }
                 }
             }
 
             return assemblies;
-        }
-
-        public static void PrintError(string message)
-        {
-            var f = Console.ForegroundColor;
-            Console.ForegroundColor = ConsoleColor.Red;
-            Console.WriteLine(message);
-            Console.ForegroundColor = f;
         }
     }
 }

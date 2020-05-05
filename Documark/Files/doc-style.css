@@ -1,0 +1,64 @@
+@import url("https://fonts.googleapis.com/css2?family=Arvo&family=Fira+Code&display=swap");
+
+body {
+    font-family: "Arvo", serif;
+}
+
+a {
+    text-decoration: none;
+}
+
+h1,
+h2,
+h3,
+h4 {
+    font-weight: normal;
+}
+
+pre,
+code {
+    font-family: "Fira Code", monospace;
+}
+
+body {
+    margin: 50px;
+    max-width: 80ch;
+}
+
+.doc-badge {
+    background-color: #eee;
+    border-radius: 4px;
+    padding: 2px 4px;
+    display: inline-block;
+    margin: 4px 5px 4px;
+}
+
+code {
+    background-color: #eee;
+    border-radius: 4px;
+    padding: 2px 4px;
+    margin: -2px 0;
+}
+
+pre code {
+    border-radius: 4px;
+    padding: 8px 16px;
+    margin: 4px 0;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    box-shadow: inset 2px 2px 4px rgba(0, 0, 0, 0.1);
+    margin: 4px 0;
+}
+
+table,
+th,
+td {
+    border: 1px solid #ddd;
+}
+
+td {
+    padding: 8px;
+}

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Runtime.Versioning;
 using System.Xml.Linq;
 
@@ -594,6 +595,11 @@ namespace Documark
             return InlineCode(e.Attribute("name").Value);
         }
 
+        protected virtual string RenderTypeParamRef(XElement e, bool textOnly = false)
+        {
+            return InlineCode(e.Attribute("name").Value);
+        }
+
         protected virtual string RenderPara(XElement element, bool textOnly = false)
         {
             if (element.HasElements) { return Paragraph(RenderElement(element, textOnly)); }
@@ -626,6 +632,7 @@ namespace Documark
                         {
                             "summary" => RenderElement(e, textOnly),
                             "remarks" => RenderElement(e, textOnly),
+                            "typeparamref" => RenderTypeParamRef(e, textOnly),
                             "paramref" => RenderParamRef(e, textOnly),
                             "para" => RenderPara(e, textOnly),
                             "code" => RenderCode(e, textOnly),
@@ -633,7 +640,7 @@ namespace Documark
                             "see" => RenderSee(e, textOnly),
 
                             // default to converting XML to text
-                            _ => node.ToString(),
+                            _ => UnknownNode(node),
                         };
                     }
                     else
@@ -648,6 +655,20 @@ namespace Documark
             }
 
             return output.Trim();
+
+            static string UnknownNode(XNode node)
+            {
+                if (node is XElement e)
+                {
+                    Log.Warning($"Unknown Element: {e.Name}");
+                }
+                else
+                {
+                    Log.Warning($"Unknown Node: {node.NodeType}");
+                }
+
+                return node.ToString();
+            }
         }
 
         #endregion
@@ -718,6 +739,7 @@ namespace Documark
             return info.GetCustomAttributes(true).Where(attr =>
             {
                 // Skip attributes we know we don't want
+                if (attr is IteratorStateMachineAttribute) { return false; }
                 if (attr is DefaultMemberAttribute) { return false; }
                 return true;
             }).Select(s => GetName(s.GetType()));
@@ -743,7 +765,7 @@ namespace Documark
         protected string GetLink(MemberInfo member)
         {
             if (Documentation.IsLoaded(member.DeclaringType)) { return Link(Escape(GetName(member)), GetPath(member)); }
-            else { return InlineCode(Escape(GetName(member))); }
+            else { return InlineCode(GetName(member)); }
         }
 
         private bool IsVisible(MemberInfo member)
@@ -790,7 +812,7 @@ namespace Documark
             else
             {
                 // Visualize as inline-code instead.
-                return InlineCode(Escape(GetName(orig)));
+                return InlineCode(GetName(orig));
             }
         }
 
