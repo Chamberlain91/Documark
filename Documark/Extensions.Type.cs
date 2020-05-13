@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Reflection;
 
 namespace Documark
 {
@@ -19,6 +20,14 @@ namespace Documark
         public static bool IsDelegate(this Type type)
         {
             return type.IsSubclassOf(typeof(Delegate));
+        }
+
+        /// <summary>
+        /// Is this method an operator?
+        /// </summary>
+        public static bool IsOperator(this MethodInfo method)
+        {
+            return method.IsSpecialName && method.Name.StartsWith("op_");
         }
 
         /// <summary>

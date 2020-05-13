@@ -40,6 +40,8 @@ namespace Documark
         public IReadOnlyList<MemberInfo> StaticMembers { get; private set; }
         public IReadOnlyList<MemberInfo> Members { get; private set; }
 
+        public IReadOnlyList<MethodInfo> Operators { get; private set; }
+
         public Type CurrentType { get; private set; }
 
         public Assembly CurrentAssembly { get; private set; }
@@ -81,10 +83,10 @@ namespace Documark
                 if (!type.IsEnum && !type.IsDelegate())
                 {
                     // Generate member files
-                    foreach (var memberGroup in Members.GroupBy(m => GetName(m)))
+                    foreach (var memberGroup in Members.GroupBy(m => GetPath(m)))
                     {
                         // Generate and write file to disk
-                        var path = GetPath(memberGroup.First());
+                        var path = memberGroup.Key;
                         GenerateDocument(path, () => GenerateMembersDocument(memberGroup));
                     }
                 }
@@ -133,15 +135,22 @@ namespace Documark
                 Methods = InstanceMethods.Concat(StaticMethods).OrderBy(m => GetName(m)).ToArray();
                 Events = InstanceEvents.Concat(StaticEvents).OrderBy(m => GetName(m)).ToArray();
 
+                // Find Operators
+                Operators = type.GetMethods(StaticBinding).Where(m => m.IsOperator()).OrderBy(m => GetName(m)).ToArray();
+
                 // 
                 InstanceMembers = ConcatMembers(InstanceFields, InstanceProperties, InstanceMethods, InstanceEvents).ToArray();
                 StaticMembers = ConcatMembers(StaticFields, StaticProperties, StaticMethods, StaticEvents).ToArray();
-                Members = ConcatMembers(Fields, Properties, Methods, Events).ToArray();
+                Members = ConcatMembers(Fields, Properties, Methods, Events, Operators).ToArray();
 
-                static IEnumerable<MemberInfo> ConcatMembers(IEnumerable<MemberInfo> a, IEnumerable<MemberInfo> b,
-                                                             IEnumerable<MemberInfo> c, IEnumerable<MemberInfo> d)
+                static IEnumerable<MemberInfo> ConcatMembers(params IEnumerable<MemberInfo>[] members)
                 {
-                    return a.Concat(b).Concat(c).Concat(d);
+                    var x = members.First();
+                    foreach (var y in members.Skip(1))
+                    {
+                        x = x.Concat(y);
+                    }
+                    return x;
                 }
             }
         }
@@ -204,7 +213,7 @@ namespace Documark
 
             return text;
 
-            string GetTypeCategoryKey(Type type)
+            static string GetTypeCategoryKey(Type type)
             {
                 var docs = Documentation.GetDocumentation(type);
                 return docs?.Element("category")?.Value ?? LexicalBottom;
@@ -275,7 +284,7 @@ namespace Documark
 
             var text = Header(HeaderSize.Large, Escape(GetName(CurrentAssembly)));
             text += QuoteIndent(GenerateAssemblyHeader(CurrentAssembly));
-            text += Header(HeaderSize.Medium, Escape(GetName(CurrentType) + "." + GetName(firstMember) + " (" + firstMember.MemberType + ")"));
+            text += Header(HeaderSize.Medium, Escape(GetName(CurrentType) + "." + GetName(firstMember) + " (" + GetMemberType(firstMember) + ")"));
 
             //
             var header = Bold("Namespace") + ": " + Link(CurrentType.Namespace, GetPath(CurrentType.Assembly)) + LineBreak();
@@ -403,6 +412,7 @@ namespace Documark
             text += GenerateMembersTables("Properties", InstanceProperties, StaticProperties);
             text += GenerateMembersTables("Events", InstanceEvents, StaticEvents);
             text += GenerateMembersTables("Methods", InstanceMethods, StaticMethods);
+            text += GenerateMembersTables("Operators", Enumerable.Empty<MethodInfo>(), Operators);
 
             text = text.Trim() + "\n\n";
             return text;
@@ -461,6 +471,20 @@ namespace Documark
         }
 
         private string GenerateMethod(MethodBase method)
+        {
+            var text = "";
+            text += Header(HeaderSize.Small, GetMethodSignature(method, true));
+            text += Paragraph(GetSummary(method));
+            text += Code(GetSyntax(method));
+            text += Paragraph(GenerateAttributeBadges(method));
+            text += Paragraph(GetParameterSummary(method));
+            text += Paragraph(GetRemarks(method));
+            text += Paragraph(GetSeeAlsoList(method));
+            text += Paragraph(GetExample(method));
+            return text;
+        }
+
+        private string GenerateOperator(MethodBase method)
         {
             var text = "";
             text += Header(HeaderSize.Small, GetMethodSignature(method, true));
@@ -833,6 +857,18 @@ namespace Documark
                 EventInfo @event => IsVisible(@event),
                 _ => false,
             };
+        }
+
+        private string GetMemberType(MemberInfo member)
+        {
+            if (member is MethodInfo method && method.IsSpecialName && method.IsOperator())
+            {
+                return "Operator";
+            }
+            else
+            {
+                return $"{member.MemberType}";
+            }
         }
 
         #endregion
@@ -1208,7 +1244,15 @@ namespace Documark
             }
             else
             {
-                return $"{method.Name}";
+                if (method.IsOperator())
+                {
+                    // Is operator
+                    return method.Name.Substring(3);
+                }
+                else
+                {
+                    return $"{method.Name}";
+                }
             }
         }
 
@@ -1426,8 +1470,16 @@ namespace Documark
             var type = member.DeclaringType;
             var root = GetRootDirectory(type.Assembly);
 
+            // Get name, prefixing operator methods to prevent clash with
+            // user defined members of similar name...
+            var name = GetName(member);
+            if (member is MethodInfo m && m.IsOperator())
+            {
+                name = "op_" + name;
+            }
+
             // Get the file name for storing the type document
-            var path = $"{root}/{type.Namespace}/{type.GetHumanName()}/{GetName(member)}.txt";
+            var path = $"{root}/{type.Namespace}/{type.GetHumanName()}/{name}.txt";
             path = Path.ChangeExtension(path, Extension);
             return path.SanitizePath();
         }
