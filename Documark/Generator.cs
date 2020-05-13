@@ -435,6 +435,7 @@ namespace Documark
             var text = "";
             text += Header(HeaderSize.Small, GetName(property));
             text += Paragraph(GetSummary(property));
+            text += Paragraph(GetValueSummary(property));
             text += Code(GetSyntax(property));
             text += Paragraph(GetParameterSummary(property)); // ie, returns
             text += Paragraph(GenerateAttributeBadges(property));
@@ -748,6 +749,12 @@ namespace Documark
         {
             var documentation = Documentation.GetDocumentation(method);
             return RenderElement(documentation?.Element("summary"), textOnly);
+        }
+
+        protected string GetValueSummary(MemberInfo method, bool textOnly = false)
+        {
+            var documentation = Documentation.GetDocumentation(method);
+            return RenderElement(documentation?.Element("value"), textOnly);
         }
 
         protected string GetRemarks(MemberInfo method, bool textOnly = false)
