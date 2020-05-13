@@ -74,11 +74,6 @@ namespace Documark
                 // Sets the current type and gathers type information
                 SetCurrentType(type);
 
-                if (type.IsNested)
-                {
-                    Console.WriteLine(Documentation.GetKey(type));
-                }
-
                 // Generate and write file to disk
                 GenerateDocument(GetPath(type), GenerateTypeDocument);
 
@@ -241,6 +236,7 @@ namespace Documark
                 text += Code(GetDelegateSyntax(CurrentType));
                 text += Paragraph(GenerateAttributeBadges(CurrentType));
                 text += Paragraph(GetRemarks(CurrentType));
+                text += Paragraph(GetSeeAlsoList(CurrentType));
                 text += Paragraph(GetExample(CurrentType));
             }
             else
@@ -249,6 +245,7 @@ namespace Documark
                 text += Code(GetSyntax(CurrentType));
                 text += Paragraph(GenerateAttributeBadges(CurrentType));
                 text += Paragraph(GetRemarks(CurrentType));
+                text += Paragraph(GetSeeAlsoList(CurrentType));
                 text += Paragraph(GetExample(CurrentType));
 
                 if (CurrentType.IsEnum)
@@ -428,6 +425,7 @@ namespace Documark
             text += Code(GetSyntax(field));
             text += Paragraph(GenerateAttributeBadges(field));
             text += Paragraph(GetRemarks(field));
+            text += Paragraph(GetSeeAlsoList(field));
             text += Paragraph(GetExample(field));
             return text;
         }
@@ -441,6 +439,7 @@ namespace Documark
             text += Paragraph(GetParameterSummary(property)); // ie, returns
             text += Paragraph(GenerateAttributeBadges(property));
             text += Paragraph(GetRemarks(property));
+            text += Paragraph(GetSeeAlsoList(property));
             text += Paragraph(GetExample(property));
 
             return text;
@@ -455,6 +454,7 @@ namespace Documark
             text += Paragraph(GenerateAttributeBadges(@event));
             text += Paragraph($"Type: {InlineCode(GetName(@event.EventHandlerType))}");
             text += Paragraph(GetRemarks(@event));
+            text += Paragraph(GetSeeAlsoList(@event));
             text += Paragraph(GetExample(@event));
             return text;
         }
@@ -468,6 +468,7 @@ namespace Documark
             text += Paragraph(GenerateAttributeBadges(method));
             text += Paragraph(GetParameterSummary(method));
             text += Paragraph(GetRemarks(method));
+            text += Paragraph(GetSeeAlsoList(method));
             text += Paragraph(GetExample(method));
             return text;
         }
@@ -564,6 +565,11 @@ namespace Documark
         #endregion
 
         #region Render XML Elements
+
+        protected virtual string RenderSeeAlso(XElement element, bool textOnly = false)
+        {
+            return RenderSee(element, textOnly);
+        }
 
         protected virtual string RenderSee(XElement element, bool textOnly = false)
         {
@@ -664,6 +670,7 @@ namespace Documark
                             "code" => RenderCode(e, textOnly),
                             "c" => RenderInlineCode(e, textOnly),
                             "see" => RenderSee(e, textOnly),
+                            "seealso" => RenderSeeAlso(e, textOnly),
 
                             // default to converting XML to text
                             _ => UnknownNode(node),
@@ -753,6 +760,20 @@ namespace Documark
         {
             var documentation = Documentation.GetDocumentation(method);
             return RenderElement(documentation?.Element("example"), textOnly);
+        }
+
+        protected string GetSeeAlsoList(MemberInfo method, bool textOnly = false)
+        {
+            var documentation = Documentation.GetDocumentation(method);
+
+            var items = new List<string>();
+            foreach (var seealso in documentation?.Elements("seealso") ?? Enumerable.Empty<XElement>())
+            {
+                items.Add(RenderSeeAlso(seealso, textOnly));
+            }
+
+            if (items.Count > 0) { return Bold("See Also:") + " " + string.Join(", ", items); }
+            else { return string.Empty; }
         }
 
         private string GenerateAttributeBadges(MemberInfo info)
