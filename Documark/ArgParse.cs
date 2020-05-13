@@ -45,6 +45,9 @@ namespace Documark
                 var idx = name.IndexOf("=");
                 name = name.Substring(0, idx);
                 type = ArgumentType.Value;
+
+                // Append default to description
+                description += $" [default: '{initial}']";
             }
             else
             // Is the option formatted akin to "x="

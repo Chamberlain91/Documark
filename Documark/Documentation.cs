@@ -3,12 +3,14 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Xml.Linq;
 
 namespace Documark
 {
     public static class Documentation
-    // inspired by: https://github.com/ZacharyPatten/Towel/blob/master/Sources/Towel/Meta.cs 
+    // inspired by: https://github.com/ZacharyPatten/Towel/blob/master/Sources/Towel/Meta.cs
+    // https://github.com/dotnet/csharplang/blob/master/spec/documentation-comments.md
     {
         // key to xml documentation
         private static readonly Dictionary<string, XElement> _documentation = new Dictionary<string, XElement>();
@@ -390,7 +392,7 @@ namespace Documark
             else
             {
                 // Simplest Case...?
-                return type.FullName;
+                return type.FullName.Replace("+", ".");
             }
         }
 
@@ -399,7 +401,12 @@ namespace Documark
         public static IEnumerable<Type> GetVisibleTypes(Assembly assembly)
         {
             // Filters to visible (ie, public or protected) types.
-            return assembly.DefinedTypes.Where(t => t.IsPublic || t.IsNestedFamORAssem);
+            return assembly.ExportedTypes.Where(t => !IsGeneratedType(t) && !t.IsSpecialName);
+
+            static bool IsGeneratedType(Type t)
+            {
+                return t.GetCustomAttributes<CompilerGeneratedAttribute>().Any();
+            }
         }
 
         public static IEnumerable<MemberInfo> GetVisibleMembers(Type type)

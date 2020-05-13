@@ -15,6 +15,8 @@ namespace Documark
         private const BindingFlags InstanceBinding = BindingFlags.Instance | Declared;
         private const BindingFlags StaticBinding = BindingFlags.Static | Declared;
 
+        private const string LexicalBottom = "ZZZZZZZZZZZZZ";
+
         public IReadOnlyList<Type> Types { get; private set; }
 
         public IReadOnlyList<ConstructorInfo> Constructors { get; private set; }
@@ -71,6 +73,11 @@ namespace Documark
             {
                 // Sets the current type and gathers type information
                 SetCurrentType(type);
+
+                if (type.IsNested)
+                {
+                    Console.WriteLine(Documentation.GetKey(type));
+                }
 
                 // Generate and write file to disk
                 GenerateDocument(GetPath(type), GenerateTypeDocument);
@@ -177,26 +184,45 @@ namespace Documark
                 // Write namespace title
                 text += Header(HeaderSize.Medium, $"{namespaceGroup.Key}");
 
+                // 
+                var hasCategories = namespaceGroup.Select(t => GetTypeCategoryKey(t))
+                                                  .Distinct()
+                                                  .Count() > 1;
+
                 // Group by object kind (class, enum, etc)
-                foreach (var typeGroup in namespaceGroup.GroupBy(t => GetObjectKind(t)).OrderBy(g => g.Key))
+                foreach (var typeGroup in namespaceGroup.GroupBy(t => GetTypeCategoryKey(t)).OrderBy(g => g.Key))
                 {
-                    // Write object kind title
-                    text += Header(HeaderSize.Small, $"{typeGroup.Key}");
+                    if (hasCategories)
+                    {
+                        var title = typeGroup.Key;
+                        if (title == LexicalBottom) { title = "Uncategorized"; }
+
+                        // Write object kind title
+                        text += Header(HeaderSize.Tiny, $"{title}");
+                    }
 
                     // Generate type table
-                    text += Table(new[] { "Name", "Summary" }, typeGroup.OrderBy(t => GetTypeSortKey(t))
-                                                              .Select(t => new[] { GetLink(t), GetSummary(t, true).Summarize() }));
+                    text += Table(new[] { "Name", "Summary" }, typeGroup.OrderBy(GetObjectKind).ThenBy(GetTypeSortKey)
+                                                                        .Select(t => new[] { GetLink(t), GetSummary(t, true).Summarize() }));
                 }
             }
 
             return text;
 
+            string GetTypeCategoryKey(Type type)
+            {
+                var docs = Documentation.GetDocumentation(type);
+                return docs?.Element("category")?.Value ?? LexicalBottom;
+            }
+
             string GetTypeSortKey(Type type)
             {
+                var category = GetTypeCategoryKey(type) ?? string.Empty;
+
                 // Has base type, is not object and is not a value type
                 return type.BaseType != null && type.BaseType != typeof(object) && !type.IsValueType
-                       ? GetName(type.BaseType) + "_" + GetName(type)
-                       : GetName(type);
+                       ? category + GetName(type.BaseType) + "_" + GetName(type)
+                       : category + GetName(type);
             }
         }
 
@@ -1125,9 +1151,20 @@ namespace Documark
 
         private bool IsVisible(MethodBase m, bool isProperty = false)
         {
-            var visible = (m.IsFamily || m.IsPublic) && !IsIgnoredMethodName(m.Name);
+            var visible = (m.IsFamily || m.IsPublic) && !IsSpecialIgnored();
             if (!isProperty) { visible = visible && !m.IsSpecialName; }
             return visible;
+
+            bool IsSpecialIgnored()
+            {
+                if (m is MethodInfo method)
+                {
+                    if (method.DeclaringType == typeof(object)) { return true; }
+                    if (method.DeclaringType == typeof(ValueType)) { return true; }
+                }
+
+                return false;
+            }
         }
 
         protected string GetName(MethodInfo method)
@@ -1194,7 +1231,6 @@ namespace Documark
                     {
                         // Get parameter docs
                         var paramInfo = RenderElement(documentation.Elements("param").FirstOrDefault(e => e.Attribute("name").Value == param.Name), true);
-                        paramInfo = paramInfo.Summarize();
 
                         if (!string.IsNullOrEmpty(paramInfo))
                         {
@@ -1219,7 +1255,6 @@ namespace Documark
                 {
                     // Get return docs
                     var paramInfo = RenderElement(documentation?.Element("returns"), true);
-                    paramInfo = paramInfo.Summarize();
 
                     if (!string.IsNullOrEmpty(paramInfo))
                     {
@@ -1377,14 +1412,6 @@ namespace Documark
         }
 
         #endregion
-
-        private static bool IsIgnoredMethodName(string name)
-        {
-            return name == "Equals"
-                || name == "ToString"
-                || name == "GetHashCode"
-                || name == "Finalize";
-        }
 
         protected IEnumerable<string> GetDependencies()
         {

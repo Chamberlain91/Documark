@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 
 namespace Documark
@@ -10,8 +11,9 @@ namespace Documark
         private static void Main(string[] args)
         {
             var parser = new ArgParse(); // todo: some sort of arguments syntax "[directory]"
-            parser.AddOption("output=./Api", "o", "Set output directory name. [default: './Api']");
+            parser.AddOption("output=./Api", "o", "Set output directory name.");
             parser.AddOption("type=[markdown,html]", "t", "Set output document type.");
+            parser.AddOption("verbose", "v", "Emit verbose messages.");
             // todo: type=[markdown, json] and automatically generate [default: markdown]
             //       then the parser can validate options from the list.
 
@@ -31,6 +33,9 @@ namespace Documark
                     }
                     else
                     {
+                        // Set verbosity
+                        Log.IsVerbose = command.HasOption("verbose");
+
                         // Assume the current directory by default
                         var dir = Directory.GetCurrentDirectory();
                         if (command.Arguments.Count == 1)
@@ -63,13 +68,15 @@ namespace Documark
                                     Documentation.LoadDocumentation(assembly);
                                 }
 
+                                Log.Info($"----");
+
                                 // Construct generator
                                 var generator = CreateGenerator(outputDirectory, generatorType);
 
                                 // Emit documentation
                                 foreach (var assembly in assemblies)
                                 {
-                                    Console.WriteLine($"- {assembly.GetName().Name}");
+                                    Console.WriteLine($"Generating: {assembly.GetName().Name}");
                                     generator.Generate(assembly);
                                 }
                             }
@@ -104,7 +111,9 @@ namespace Documark
         private static HashSet<Assembly> FindAndLoadDocumentedAssemblies(string directory)
         {
             var assemblies = new HashSet<Assembly>();
-            foreach (var path in Directory.EnumerateFiles(directory, "*.xml", SearchOption.AllDirectories))
+            var names = new HashSet<string>();
+            foreach (var path in Directory.EnumerateFiles(directory, "*.xml", SearchOption.AllDirectories)
+                                          .OrderBy(s => s.Contains("/bin") ? 1 : -1))
             {
                 // Gets the similarly named .dll from the .xml file path 
                 var assemblyPath = Path.ChangeExtension(path, "dll");
@@ -112,17 +121,23 @@ namespace Documark
                 // Does this .dll actually exist?
                 if (File.Exists(assemblyPath))
                 {
-                    try
+                    var name = AssemblyName.GetAssemblyName(assemblyPath);
+                    if (names.Add(name.Name))
                     {
-                        // Attempt loading the assembly
-                        var assembly = Assembly.LoadFrom(assemblyPath);
-                        assemblies.Add(assembly); // success!
-                    }
-                    catch (Exception e) when (e is BadImageFormatException ||
-                                              e is FileLoadException)
-                    {
-                        // Eh, this is ok...
-                        Log.Error($"Unable to load '{assemblyPath}' ({e.Message}).");
+                        Log.Info($"Loading: {name.Name}");
+
+                        try
+                        {
+                            // Attempt loading the assembly
+                            var assembly = Assembly.LoadFrom(assemblyPath);
+                            assemblies.Add(assembly); // success!
+                        }
+                        catch (Exception e) when (e is BadImageFormatException ||
+                                                  e is FileLoadException)
+                        {
+                            // Eh, this is ok...
+                            Log.Error($"Unable to load '{assemblyPath}' ({e.Message}).");
+                        }
                     }
                 }
             }
